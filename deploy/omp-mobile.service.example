@@ -1,0 +1,16 @@
+[Unit]
+Description=omp mobile bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/omp-mobile
+Environment=OMP_REMOTE_PORT=8787
+Environment=OMP_REMOTE_ROOTS=%h/projects
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

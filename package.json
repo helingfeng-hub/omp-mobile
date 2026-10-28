@@ -1,0 +1,22 @@
+{
+  "name": "omp-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Remote Android/PWA control surface for omp: launch omp in tmux and join its Collab session.",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test test/*.test.js",
+    "smoke": "node scripts/smoke.js"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "node-pty": "^1.1.0",
+    "ws": "^8.22.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

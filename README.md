@@ -6,7 +6,7 @@
 
 **把电脑里的 [omp](https://github.com/can1357/oh-my-pi) 搬到手机上。**
 
-omp mobile 是 omp 的远程控制面板：电脑上跑一个 bridge，手机经 Tailscale 私有网络连进来，启动 omp 会话、看流式回复和工具调用、发提示词、打断、回答问题，必要时开一个 shell。不开放公网端口；聊天内容走 omp Collab 的端到端加密房间。
+omp mobile 是 omp 的远程控制面板：电脑上跑一个 bridge，手机经 Tailscale 私有网络连进来，查看并继续电脑上的 omp 会话。打开 App 时如果还没有会话，会自动在默认目录启动一个；已有会话直接列出。聊天内容走 omp Collab 的端到端加密房间，不开放公网端口。
 
 适合已经在电脑上用 omp 写代码、但人经常不在工位的人：地铁上补一句需求、夜里盯长任务、出门前审一眼 diff。
 
@@ -22,11 +22,12 @@ omp mobile 是 omp 的远程控制面板：电脑上跑一个 bridge，手机经
 
 | 功能 | 说明 |
 | --- | --- |
-| 启动会话 | 在允许的目录里新建 omp 会话；bridge 用 tmux 托管，手机断网/锁屏不会中断任务 |
+| 自动会话 | 打开 App 时没有会话就自动在默认目录启动；已有会话直接列出，不用再点启动 |
 | 实时对话 | 流式文本、thinking、工具卡片、子代理进度、模型与上下文状态 |
+| 会话状态 | 当前会话顶部显示会话名、模型和上下文使用量 |
+| 启动画面 | 冷启动短暂展示 omp mobile Logo，再进入会话列表 |
 | 远程控制 | 发提示词、打断、回答 omp 的确认/选择弹窗 |
-| 会话管理 | 会话列表、最近 tmux 输出、一键停止 |
-| Shell | 独立 PTY（xterm.js），可开登录 shell，也可 attach 到某个 omp 会话的 tmux；带 Esc/Tab/Ctrl+C/方向键 |
+| 会话列表 | 显示主机名和会话；点一下进入 Collab 对话 |
 | 两种壳 | Android APK 或 PWA（添加到主屏幕），同一套深色移动端 UI |
 | 只读分享 | 生成 view-only 链接给朋友围观进度，不给执行权限 |
 
@@ -77,7 +78,7 @@ OMP_REMOTE_ROOTS="$HOME/projects" npm start
 
 - 首次启动会生成并打印一次 API token，之后从 `~/.config/omp-remote/token` 读取（权限 `0600`）。
 - `OMP_REMOTE_ROOTS` 是手机能启动会话的目录白名单，别设成 `/` 或整个 `$HOME`。
-- 验证：电脑浏览器打开 `http://127.0.0.1:8787`，输入 token，能看到控制台和 HOST 信息。
+- 验证：电脑浏览器打开 `http://127.0.0.1:8787`，输入 token，能看到主机名和会话列表。
 
 ### 3. 电脑：发布到 tailnet
 
@@ -98,16 +99,16 @@ tailscale serve status
 
 两种任选：
 
-- **APK**：从 [Releases](https://github.com/helingfeng-hub/omp-mobile/releases) 下载 `omp-mobile-0.1.1.apk`，允许“未知来源”后安装。
+- **APK**：从 [Releases](https://github.com/helingfeng-hub/omp-mobile/releases) 下载 `omp-mobile-0.1.6.apk`，允许“未知来源”后安装。
 - **PWA**：Chrome 打开 bridge 地址 → 菜单 → 添加到主屏幕。
 
 首次打开填 bridge 地址（例如 `https://host.tailnet.ts.net/`）；进入后在右上角 ⚙ 填 API token。APK 里**长按页面**可重新设置地址。
 
-### 5. 启动第一个会话
+### 5. 打开第一个会话
 
-工作目录填 roots 内的路径（例如 `/home/you/projects/demo`）→ **启动会话** → **打开**。
+App 打开后会显示主机名和会话列表。没有会话时，bridge 会自动在 `OMP_REMOTE_ROOTS` 的第一个目录里启动一个 omp 会话；已经有会话时直接列出，不会重复启动。
 
-bridge 会最多等 30 秒，直到 omp 发布 Collab host；超时会返回 tmux 输出帮助定位。
+点会话卡片进入 Collab。bridge 最多等 30 秒，直到 omp 发布 Collab host；失败时页面会给出“重试”入口。
 
 验证：手机发一句“这个仓库是做什么的？”，同时在电脑上 `tmux attach -t omp-xxxx`，能看到同一个会话。
 
@@ -182,12 +183,11 @@ cat ~/.config/omp-remote/token
 
 在 App 的 ⚙ 里重新粘贴；或网页端“清除 token”后重连。
 
-### 启动会话失败 / 504
+### 自动启动失败 / 504
 
-- 控制台 HOST 卡片里的 `adapter`、`omp`、`tmux` 应该是正常状态。
-- 工作目录必须在 `OMP_REMOTE_ROOTS` 内且真实存在。
-- 报错里会附 tmux 最近输出；常见原因是 omp 未登录模型，或 `omp collab` 连不上 relay。
-- 首次启动慢可以调大 `OMP_REMOTE_START_TIMEOUT_MS`。
+- 自动启动使用的是 `OMP_REMOTE_ROOTS` 的第一个目录；确认它存在且可写。
+- 常见原因是 omp 未登录模型，或 `omp collab` 连不上 relay。
+- 首次启动慢可以调大 `OMP_REMOTE_START_TIMEOUT_MS`，然后点页面上的“重试”。
 
 ### 聊天区域空白
 
@@ -212,7 +212,7 @@ set OMP_REMOTE_ROOTS=/home/youruser/projects
 node src\index.js
 ```
 
-用“登录时”的 Task Scheduler 任务运行，**不要**用 SYSTEM 账户（拿不到 WSL 用户和 omp 凭据）。`node-pty` 需要可用的 ConPTY；装不上时 bridge 仍可聊天，只是没有 Shell 标签。
+用“登录时”的 Task Scheduler 任务运行，**不要**用 SYSTEM 账户（拿不到 WSL 用户和 omp 凭据）。`node-pty` 需要可用的 ConPTY；装不上时 bridge 仍可聊天。
 
 ### 想换端口 / 管多台电脑
 
@@ -277,7 +277,7 @@ loginctl enable-linger "$USER"      # 注销后继续运行
 
 ```bash
 ANDROID_HOME=/path/to/android-sdk \
-VERSION="0.1.1" VERSION_NAME="0.1.1" VERSION_CODE=3 \
+VERSION="0.1.6" VERSION_NAME="0.1.6" VERSION_CODE=7 \
 ./scripts/build-android.sh
 ```
 
@@ -318,7 +318,7 @@ deploy/         systemd 示例
 ## 已知边界
 
 - 电脑休眠/关机时无法远程冷启动。
-- Collab guest 不能执行 host-only 命令（`/model`、`/compact`、`/resume`、`!`、`$` 等）；需要时用 Shell 标签。
+- Collab guest 不能执行 host-only 命令（`/model`、`/compact`、`/resume`、`!`、`$` 等）；需要时在电脑上操作。
 - `/new`、`/resume` 后 room generation 会轮换；在 UI 里重新点“聊天”即可让 bridge 取新链接。
 - 没有内置推送；锁屏后 WebSocket 可能断开，重开页面恢复。
 - APK 只保存一个 bridge 地址；多主机用 PWA 分别添加。

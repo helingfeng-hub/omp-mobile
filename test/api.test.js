@@ -75,7 +75,7 @@ test("API requires a token and serves the PWA shell", async () => {
 
     const index = await fetch(`${base}/`);
     assert.equal(index.status, 200);
-    assert.match(await index.text(), /omp mobile/);
+    assert.match(await index.text(), /<title>omp 会话<\/title>/);
     assert.match(index.headers.get("content-security-policy"), /default-src 'self'/);
 
     const traversal = await fetch(`${base}/..%2F..%2Fetc%2Fpasswd`);

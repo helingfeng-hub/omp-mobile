@@ -173,7 +173,7 @@ export async function createServer(config, deps = {}) {
         return sendJson(res, 201, { ok: true, session });
       }
 
-      const sessionMatch = /^\/api\/sessions\/([^/]+)(?:\/(link|output|stop))?$/.exec(pathname);
+      const sessionMatch = /^\/api\/sessions\/([^/]+)(?:\/(link|output|stop|status))?$/.exec(pathname);
       if (sessionMatch) {
         const name = decodeURIComponent(sessionMatch[1]);
         const action = sessionMatch[2] ?? null;
@@ -191,6 +191,9 @@ export async function createServer(config, deps = {}) {
         if (req.method === "GET" && action === "output") {
           const lines = Number(url.searchParams.get("lines") || 80);
           return sendJson(res, 200, { ok: true, output: await manager.output(name, lines) });
+        }
+        if (req.method === "GET" && action === "status") {
+          return sendJson(res, 200, { ok: true, ...(await manager.status(name)) });
         }
       }
 

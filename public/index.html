@@ -2,42 +2,53 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#0b0e14" />
     <meta name="color-scheme" content="dark" />
-    <meta name="description" content="Launch omp on your computer and join its live Collab session from your phone." />
+    <meta name="description" content="在手机上查看并继续电脑上的 omp 会话。" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
-    <link rel="stylesheet" href="/styles.css?v=0.1.2" />
-    <title>omp mobile</title>
+    <link rel="stylesheet" href="/styles.css?v=0.1.17" />
+    <title>omp 会话</title>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div class="brand">
-          <img src="/icons/icon.svg" alt="" class="brand-mark" />
-          <div>
-            <strong>omp mobile</strong>
-            <span id="host-label" class="muted">bridge</span>
+        <div class="identity">
+          <div class="eyebrow">主机</div>
+          <h1 id="host-name">连接中…</h1>
+          <div class="host-status">
+            <span id="connection-dot" class="dot" title="连接状态"></span>
+            <span id="host-sub">正在连接</span>
           </div>
         </div>
         <div class="topbar-actions">
-          <span id="connection-dot" class="dot" title="bridge status"></span>
           <button id="refresh-button" class="icon-button" type="button" title="刷新">↻</button>
           <button id="settings-button" class="icon-button" type="button" title="设置">⚙</button>
         </div>
       </header>
 
       <main>
+        <section id="boot-view" class="boot-overlay" aria-live="polite">
+          <div class="boot-brand">
+            <img src="/icons/icon.svg" alt="" class="boot-logo" />
+            <h1>omp mobile</h1>
+            <p>远程会话</p>
+          </div>
+          <div class="boot-status">
+            <span class="spinner" aria-hidden="true"></span>
+            <p>正在加载…</p>
+            <p class="hint">如果长时间停在这里，点下面的按钮重新加载。</p>
+            <a class="button-link" href="/?reload=1">重新加载</a>
+          </div>
+        </section>
+
         <section id="auth-view" class="panel auth-panel hidden">
-          <h1>连接你的电脑</h1>
-          <p class="muted">
-            手机和电脑需要在同一个 Tailscale 网络。输入 bridge 启动时显示的 API token。
-          </p>
+          <h2>连接电脑</h2>
+          <p class="muted">手机和电脑需要处在同一个 Tailscale 网络。输入电脑端显示的访问令牌。</p>
           <form id="auth-form">
-            <label for="token-input">API token</label>
+            <label for="token-input">访问令牌</label>
             <input id="token-input" name="token" type="password" autocomplete="current-password" spellcheck="false" required />
             <button type="submit" class="primary">连接</button>
           </form>
@@ -45,105 +56,45 @@
         </section>
 
         <section id="main-view" class="hidden">
-          <section class="panel hero">
-            <div class="hero-row">
-              <div>
-                <div class="eyebrow">HOST</div>
-                <h1 id="hero-host">—</h1>
-              </div>
-              <div id="health-badge" class="badge">checking</div>
-            </div>
-            <div class="meta-grid">
-              <div><span class="meta-label">adapter</span><span id="meta-adapter">—</span></div>
-              <div><span class="meta-label">omp</span><span id="meta-omp">—</span></div>
-              <div><span class="meta-label">roots</span><span id="meta-roots">—</span></div>
-            </div>
-          </section>
-
-          <section class="panel start-panel">
-            <div class="section-heading">
-              <h2>启动 omp</h2>
-              <span class="muted">tmux + Collab</span>
-            </div>
-            <form id="start-form">
-              <label for="cwd-input">工作目录</label>
-              <input id="cwd-input" name="cwd" list="roots-list" spellcheck="false" placeholder="/home/you/project" required />
-              <datalist id="roots-list"></datalist>
-              <div class="start-actions">
-                <button id="start-button" type="submit" class="primary">启动会话</button>
-                <button id="shell-button" type="button" class="secondary">打开 Shell</button>
-              </div>
-            </form>
-            <p class="hint">启动后手机端通过 omp Collab 的加密房间实时看回复和工具输出。</p>
-          </section>
-
-          <section class="section-heading sessions-heading">
+          <div class="section-heading">
             <h2>会话</h2>
-            <span id="session-count" class="muted">0</span>
-          </section>
+            <div class="section-actions">
+              <span id="session-count" class="muted"></span>
+              <button id="new-session-button" class="new-session-button" type="button">＋ 新会话</button>
+            </div>
+          </div>
           <section id="sessions" class="session-list" aria-live="polite"></section>
-          <section id="empty-state" class="panel empty hidden">
-            <p>还没有会话。输入目录并启动一个。</p>
+          <section id="empty-state" class="empty-state hidden">
+            <span class="spinner" aria-hidden="true"></span>
+            <div>
+              <p id="empty-message">正在启动 omp…</p>
+              <p id="empty-detail" class="empty-detail hidden"></p>
+            </div>
+            <button id="retry-button" class="secondary hidden" type="button">重试</button>
           </section>
         </section>
       </main>
-
-      <footer class="footer">
-        <span>Tailscale-only · token-gated</span>
-        <button id="install-button" class="link-button hidden" type="button">安装到主屏幕</button>
-      </footer>
     </div>
 
-    <div id="chat-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="omp 会话">
-      <header class="overlay-bar">
-        <div>
-          <strong>omp 会话</strong>
-          <span id="chat-session-label" class="muted"></span>
+    <div id="chat-overlay" class="overlay chat-overlay hidden" role="dialog" aria-modal="true" aria-label="omp 会话">
+      <iframe id="chat-frame" title="omp 会话" allow="clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe>
+      <div id="chat-loading" class="chat-loading"><span class="spinner"></span>正在连接…</div>
+      <div class="chat-topbar">
+        <button id="chat-back" class="chat-back" type="button" title="返回主页">‹ 返回</button>
+        <div class="chat-current">
+          <span id="chat-current-title" class="chat-current-title"></span>
+          <span id="chat-current-meta" class="chat-current-meta"></span>
         </div>
-        <div class="overlay-actions">
-          <a id="chat-external" class="icon-button" href="#" target="_blank" rel="noopener noreferrer" title="在浏览器打开">↗</a>
-          <button id="chat-close" class="icon-button" type="button" title="关闭">✕</button>
-        </div>
-      </header>
-      <iframe id="chat-frame" title="omp Collab" allow="clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe>
-      <div id="chat-loading" class="chat-loading"><span class="spinner"></span>正在连接 Collab…</div>
-      <p id="chat-hint" class="overlay-hint">如果聊天区域空白，点右上角 ↗ 在浏览器打开。</p>
-    </div>
-
-    <div id="term-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="终端">
-      <header class="overlay-bar">
-        <div>
-          <strong>终端</strong>
-          <span id="term-session-label" class="muted"></span>
-        </div>
-        <div class="overlay-actions">
-          <button id="term-close" class="icon-button" type="button" title="关闭">✕</button>
-        </div>
-      </header>
-      <div id="terminal" class="terminal"></div>
-      <div class="keybar" aria-label="终端快捷键">
-        <button type="button" data-key="escape">Esc</button>
-        <button type="button" data-key="tab">Tab</button>
-        <button type="button" data-key="ctrl-c">Ctrl+C</button>
-        <button type="button" data-key="up">↑</button>
-        <button type="button" data-key="down">↓</button>
-        <button type="button" data-key="left">←</button>
-        <button type="button" data-key="right">→</button>
-        <button type="button" data-key="enter">Enter</button>
       </div>
-    </div>
-
-    <div id="output-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="会话输出">
-      <header class="overlay-bar">
-        <div>
-          <strong>最近输出</strong>
-          <span id="output-session-label" class="muted"></span>
-        </div>
-        <div class="overlay-actions">
-          <button id="output-close" class="icon-button" type="button" title="关闭">✕</button>
-        </div>
-      </header>
-      <pre id="output-pre" class="output"></pre>
+      <div id="drawer-edge" class="drawer-edge" aria-hidden="true"></div>
+      <div id="drawer-backdrop" class="drawer-backdrop hidden"></div>
+      <aside id="chat-drawer" class="drawer" aria-label="会话列表">
+        <header class="drawer-header">
+          <strong>会话</strong>
+          <button id="drawer-close" class="icon-button" type="button" title="关闭">✕</button>
+        </header>
+        <div id="drawer-sessions" class="drawer-sessions"></div>
+      </aside>
     </div>
 
     <div id="settings-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="设置">
@@ -155,19 +106,32 @@
       </header>
       <section class="panel settings-panel">
         <form id="settings-form">
-          <label for="settings-token">API token</label>
+          <label for="settings-token">访问令牌</label>
           <input id="settings-token" type="password" autocomplete="current-password" spellcheck="false" />
           <button type="submit" class="primary">保存</button>
         </form>
-        <button id="logout-button" type="button" class="danger">清除 token</button>
-        <p class="hint">token 只保存在本机 localStorage；不会发送给 Collab relay。</p>
+        <button id="logout-button" type="button" class="danger">清除令牌</button>
+        <p class="hint">令牌只保存在本机，不会发送到会话中继。</p>
       </section>
+    </div>
+
+    <div id="rename-overlay" class="modal hidden" role="dialog" aria-modal="true" aria-label="重命名会话">
+      <div class="modal-card panel">
+        <h3>重命名会话</h3>
+        <form id="rename-form">
+          <label for="rename-input">名称</label>
+          <input id="rename-input" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="给这个会话起个名字" />
+          <div class="modal-actions">
+            <button id="rename-cancel" type="button" class="secondary">取消</button>
+            <button type="submit" class="primary">保存</button>
+          </div>
+        </form>
+        <p class="hint">留空则恢复智能命名。</p>
+      </div>
     </div>
 
     <div id="toast" class="toast hidden" role="status"></div>
 
-    <script src="/vendor/xterm/xterm.js"></script>
-    <script src="/vendor/xterm/addon-fit.js"></script>
-    <script type="module" src="/app.js?v=0.1.2"></script>
+    <script type="module" src="/app.js?v=0.1.17"></script>
   </body>
 </html>

@@ -1,12 +1,9 @@
-const CACHE = "omp-mobile-v4";
+const CACHE = "omp-mobile-v19";
 const ASSETS = [
   "/",
-  "/app.js?v=0.1.2",
-  "/styles.css?v=0.1.2",
+  "/app.js?v=0.1.17",
+  "/styles.css?v=0.1.17",
   "/manifest.webmanifest",
-  "/vendor/xterm/xterm.js",
-  "/vendor/xterm/xterm.css",
-  "/vendor/xterm/addon-fit.js",
   "/icons/icon.svg",
   "/icons/icon-192.png",
   "/icons/icon-512.png",

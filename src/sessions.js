@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { AppError, randomId } from "./util.js";
 import { linkForHost, listHosts, pickHost, waitForHost } from "./collab.js";
+import { parseSessionStatus } from "./status.js";
 
 function publicHost(host) {
   if (!host) return null;
@@ -236,6 +237,25 @@ export class SessionManager {
   async output(name, lines) {
     this.#assertName(name);
     return this.adapter.capture(name, lines);
+  }
+
+  async status(name) {
+    this.#assertName(name);
+    const entry = this.sessions.get(name);
+    if (!entry && !(await this.adapter.hasSession(name))) {
+      throw new AppError(`unknown session: ${name}`, 404, "session_not_found");
+    }
+    const output = await this.adapter.capture(name, 80);
+    const parsed = parseSessionStatus(output);
+    const model = entry?.host?.model;
+    return {
+      name,
+      model: parsed.model
+        || (model
+          ? [model.provider, model.id].filter(Boolean).join("/")
+          : null),
+      context: parsed.context,
+    };
   }
 
   #assertName(name) {

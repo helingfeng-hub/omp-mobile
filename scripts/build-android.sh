@@ -70,8 +70,11 @@ PY
   -classpath "$PLATFORM/android.jar" \
   -d "$ROOT/android/build/classes" \
   "$ROOT/android/src/dev/omp/mobile/MainActivity.java" \
+  "$ROOT/android/src/dev/omp/mobile/SplashWebViewClient.java" \
   "$ROOT/android/src/dev/omp/mobile/UpdateChecker.java" \
   "$ROOT/android/src/dev/omp/mobile/ApkProvider.java" \
+  "$ROOT/android/src/dev/omp/mobile/ConnectionService.java" \
+  "$ROOT/android/build/gen/dev/omp/mobile/R.java" \
   "$ROOT/android/build/genlocal/dev/omp/mobile/LocalConfig.java"
 
 "$BUILD_TOOLS/d8" --lib "$PLATFORM/android.jar" --min-api 23 \

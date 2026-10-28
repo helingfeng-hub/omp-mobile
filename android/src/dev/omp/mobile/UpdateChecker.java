@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -42,15 +43,33 @@ final class UpdateChecker {
         new Thread(() -> {
             try {
                 JSONObject manifest = fetchJson(new URL(baseUrl + "update.json"));
-                int remoteCode = manifest.getInt("versionCode");
-                int currentCode = activity.getPackageManager()
-                    .getPackageInfo(activity.getPackageName(), 0).versionCode;
-                if (remoteCode <= currentCode) return;
-                String remoteName = manifest.optString("versionName", "新版本");
+                long remoteCode = manifest.optLong("versionCode", 0L);
+                PackageInfo info = activity.getPackageManager()
+                    .getPackageInfo(activity.getPackageName(), 0);
+                long currentCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? info.getLongVersionCode()
+                    : info.versionCode;
+                String currentName = info.versionName == null ? "" : info.versionName.trim();
+                String remoteName = manifest.optString("versionName", "").trim();
+                boolean newer;
+                if (!currentName.isEmpty() && !remoteName.isEmpty()) {
+                    // Version name is authoritative. This prevents an endless prompt
+                    // when the installed version name already matches the manifest.
+                    newer = compareVersions(remoteName, currentName) > 0;
+                } else {
+                    newer = remoteCode > currentCode;
+                }
+                if (!newer) return;
+                String titleName = remoteName.isEmpty() ? "新版本" : remoteName;
+                String currentLabel = currentName.isEmpty()
+                    ? String.valueOf(currentCode)
+                    : currentName;
                 String notes = manifest.optString("notes", "");
+                String message = "当前版本：" + currentLabel + "\n最新版本：" + titleName
+                    + (notes.isEmpty() ? "" : "\n\n" + notes);
                 activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
-                    .setTitle("发现新版本 " + remoteName)
-                    .setMessage(notes.isEmpty() ? "是否下载并安装更新？" : notes)
+                    .setTitle("发现新版本 " + titleName)
+                    .setMessage(message)
                     .setPositiveButton("更新", (dialog, which) -> download(manifest))
                     .setNegativeButton("稍后", null)
                     .show());
@@ -114,6 +133,27 @@ final class UpdateChecker {
         intent.setDataAndType(uri, "application/vnd.android.package-archive");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
         activity.startActivity(intent);
+    }
+
+    private static int compareVersions(String left, String right) {
+        String[] a = left.split("[^0-9]+");
+        String[] b = right.split("[^0-9]+");
+        int count = Math.max(a.length, b.length);
+        for (int i = 0; i < count; i++) {
+            long x = parseVersionPart(a, i);
+            long y = parseVersionPart(b, i);
+            if (x != y) return Long.compare(x, y);
+        }
+        return 0;
+    }
+
+    private static long parseVersionPart(String[] parts, int index) {
+        if (index >= parts.length || parts[index].isEmpty()) return 0L;
+        try {
+            return Long.parseLong(parts[index]);
+        } catch (NumberFormatException error) {
+            return 0L;
+        }
     }
 
     private static JSONObject fetchJson(URL url) throws Exception {

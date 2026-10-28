@@ -1,7 +1,7 @@
 {
-  "name": "omp mobile",
+  "name": "omp 会话",
   "short_name": "omp",
-  "description": "Launch omp on your computer and join its live Collab session from your phone.",
+  "description": "在手机上查看并继续电脑上的 omp 会话。",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

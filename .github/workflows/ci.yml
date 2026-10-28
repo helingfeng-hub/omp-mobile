@@ -1,7 +1,7 @@
 name: CI
 
 on:
-  # 不加 paths-ignore：CI 是 branch protection 的 required check，workflow
+  # 不加 paths-ignore：CI 需要成为 branch protection 的 required check，workflow
   # 按路径过滤不触发时 check 永不出现，docs-only PR 会被永久 pending 阻塞。
   push:
     branches: [main]

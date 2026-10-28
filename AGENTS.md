@@ -4,10 +4,10 @@ omp mobile：把电脑里的 omp 搬到手机上。bridge 在本机运行，手�
 
 ## 架构与数据流
 
-- `src/index.js` 是入口。`src/config.js` 的 `loadConfig` 读取环境变量并准备 token、overlay 与 roots 白名单，然后由 `src/server.js` 的 `createServer` 装配 HTTP 服务、WebSocket 与会话管理器。
+- `src/index.js` 是入口。`src/config.js` 的 `loadConfig` 读取环境变量并准备 token 与 roots 白名单，然后由 `src/server.js` 的 `createServer` 装配 HTTP 服务、WebSocket 与会话管理器。会话启动时由 `src/sessions.js` 的 `buildOverlay` 生成 overlay 配置并写入 stateDir 下的 overlays 目录。
 - `src/server.js` 提供 `/api/*`（Bearer 鉴权）、`/healthz`、`/ws/terminal`，并从 `public/` 提供 PWA 静态资源。所有响应都带安全头，CSP 默认只允许同源资源，frame-src 放行 HTTPS 与 localhost 页面供 Collab iframe 使用。
 - `src/auth.js` 用常量时间比较校验 token。token 首次启动生成并写入 `~/.config/omp-remote/token`（权限 0600），可用 `OMP_REMOTE_TOKEN` 覆盖。
-- `src/host.js` 定义适配器。Linux 适配器直接执行 `tmux` 与 `omp`，WSL 适配器把命令转进 WSL 发行版。适配器负责把工作目录限制在 `OMP_REMOTE_ROOTS` 内、启动与停止 tmux 会话、抓取最近输出。node-pty 在需要 PTY 时懒加载，加载失败只让终端功能降级，不影响聊天。
+- `src/host.js` 定义适配器。Linux 适配器直接执行 `tmux` 与 `omp`，WSL 适配器把命令转进 WSL 发行版。适配器负责把工作目录限制在 `OMP_REMOTE_ROOTS` 内、启动与停止 tmux 会话、抓取最近输出。终端启用时 `createAdapter` 才动态导入 node-pty，导入失败只让终端功能降级，不影响聊天。
 - `src/sessions.js` 管理会话生命周期。启动会话后轮询 `omp collab list --json` 等待 Collab host 出现，再取 control 或 view 链接。
 - `src/collab.js` 解析 collab 输出、挑选 host、校验链接协议，只接受 HTTPS 或 localhost 的 HTTP。
 - `src/terminal.js` 发放一次性 ticket 并挂接 PTY，输入输出走 WebSocket。
@@ -36,14 +36,14 @@ npm run smoke                                 # 需要本机 omp 与 tmux，会�
 
 构建 APK 需要 Android SDK 的 build-tools 与 platform，以及 JDK，版本参数与命令见 README 的“自己构建 APK”一节。完整环境变量、API 与部署说明同样以 README 为准。
 
-## 编码约定
+## 项目约定
 
 - 服务端与前端脚本都是 ESM。服务端只用 `node:` 内置模块与现有依赖，不引入构建步骤。`public/` 静态资源由 bridge 直接提供，不使用打包器。
 - 错误统一抛 `src/util.js` 的 `AppError`，带状态码与机器可读的 code，接口层转成 JSON 响应。
-- 配置集中在 `src/config.js` 的 `loadConfig`，一律来自环境变量并带默认值。新增配置项要同步更新 README 的配置表。
+- 配置集中在 `src/config.js` 的 `loadConfig`，环境变量优先，`stateDir/config.json` 兜底，再取默认值。新增配置项要同步更新 README 的配置表。
 - 路径先过 `isWithinRoots`，不能假设 `OMP_REMOTE_ROOTS` 之外安全。拼接 shell 命令一律用 `shellQuote`。
 - 外部命令经适配器统一执行，Linux 适配器走 `execFile`，WSL 适配器走 `runWsl`。测试注入 fake adapter，不在测试里起真实 omp、tmux 或 WSL。
-- node-pty 保持懒加载与可选依赖语义，导入失败只降级终端。
+- node-pty 保持可选依赖语义，导入失败只降级终端。
 - 不提交 `public/update.json`、`public/omp-mobile-latest.apk`、个人 APK 与 keystore，规则见 `.gitignore`。个人 APK 内嵌 bridge 地址与 token，不能分享。
 
 ## 重要文件
@@ -58,7 +58,7 @@ npm run smoke                                 # 需要本机 omp 与 tmux，会�
 ## 测试与 CI
 
 - `npm test` 用 `node:test`。`test/api.test.js` 用 fake adapter 覆盖鉴权、路径穿越、CSP 与会话启动超时。`test/util.test.js` 覆盖命令转义、roots 校验、tmux 输出解析与 Collab 链接校验。`test/wsl.test.js` 覆盖 WSL 适配器的参数拼装。
-- 测试按 POSIX 路径编写。Windows 本机跑 `npm test` 时 `normalizeRoots` 的用例会因盘符前缀失败，Linux 与 CI 上通过，跨平台结论以 CI 为准。
+- 测试按 POSIX 路径编写。Windows 本机跑 `npm test` 时 `normalizeRoots` 的用例会因盘符前缀失败，`shellQuote` 用例要求 PATH 中有 `bash`，Linux 与 CI 上通过，跨平台结论以 CI 为准。
 - `.github/workflows/ci.yml` 在推送 `main` 与 PR 时跑 `npm ci` 与 `npm test`，环境为 Node 22 与 ubuntu-24.04。本机没有 omp 与 tmux 时不要用 `npm run smoke` 代替 `npm test`。
 
 ## 写作要求

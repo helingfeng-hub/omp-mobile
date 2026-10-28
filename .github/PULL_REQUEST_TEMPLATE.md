@@ -1,6 +1,6 @@
-<!-- 标题以意图标签开头，可选 [FEAT]、[FIX]、[DOC]、[TEST]、[CLEANUP]、[DEP]，AI 生成的标题在最前面加 [AI Generated]。 -->
+<!-- 标题以意图标签开头，可选 [FEAT]、[FIX]、[DOCS]、[TEST]、[CLEANUP]、[DEP]，AI 生成的标题在最前面加 [AI Generated]。 -->
 <!-- 写 Fixes #NN 表示解决并自动关闭对应 Issue，只关联不关闭写 Related to #NN。 -->
-<!-- 提 PR 至少关联一个同仓库 Issue，纯文档小修除外。 -->
+<!-- 修复与功能类 PR 一般先开 Issue 并关联。错别字、修法唯一的明显 bug 等小改动，以及纯文档小修，可以直接提 PR。 -->
 <!-- 正文按 CONTRIBUTING.md 的正文写作约定写，完整叙述给不了解上下文的协作者，细节不收折叠区。段落顺序与 docs/agents/issue-tracker.md 的 PR 格式一致，不必抄标题下面的提示语。 -->
 
 关联 Issue：

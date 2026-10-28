@@ -36,7 +36,7 @@ type: 中文简述
 1. 先开 Issue，修复与功能类 PR 要关联一个同仓库 Issue。写 `Fixes #NN` 表示合并即自动关闭对应 Issue，只关联不关闭写 `Related to #NN`。纯文档小修可以不关联。
 2. 从 `main` 建分支，分支名用 `fix/<简述>` 或 `feat/<简述>`。
 3. 一个 PR 只做一件事，本地至少跑 `npm test`。
-4. 开 PR 指向 `main`。标题以意图标签开头，可选 `[FEAT]`、`[FIX]`、`[DOC]`、`[TEST]`、`[CLEANUP]`、`[DEP]`，AI 生成的标题在最前面加 `[AI Generated]`。正文按模板里的问题逐段回答。
+4. 开 PR 指向 `main`。标题以意图标签开头，可选 `[FEAT]`、`[FIX]`、`[DOC]`、`[TEST]`、`[CLEANUP]`、`[DEP]`，AI 生成的标题在最前面加 `[AI Generated]`。正文按模板的五个部分写：Summary 一段话讲做了什么，Motivation 讲为什么值得做，Changes 逐个文件讲改动脉络，Why this is safe 讲不改动的不变量与退路，Test plan 逐项报告验证结果。段落顺序与 `docs/agents/issue-tracker.md` 的 PR 格式一致。
 5. CI 通过、评审通过后由维护者合并。
 
 ## 正文写作约定

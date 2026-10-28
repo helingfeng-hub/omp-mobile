@@ -1,5 +1,7 @@
 const TOKEN_KEY = "omp-mobile.token";
 const META_KEY = "omp-mobile.session-meta";
+const BOOT_MIN_MS = 1400;
+const bootShownAt = Date.now();
 const $ = (selector) => document.querySelector(selector);
 
 const state = {
@@ -836,6 +838,10 @@ async function init() {
     await loadState({ quiet: true });
   } else {
     setAuthVisible(true);
+  }
+  const bootRemaining = BOOT_MIN_MS - (Date.now() - bootShownAt);
+  if (bootRemaining > 0) {
+    await new Promise((resolve) => setTimeout(resolve, bootRemaining));
   }
   $("#boot-view").classList.add("hidden");
   startPolling();

@@ -47,6 +47,8 @@ public class MainActivity extends Activity {
     private static final String TEXT = "#e8edf7";
     private static final String MUTED = "#8b97ab";
     private static final String ACCENT = "#7c9cff";
+    private static final long SPLASH_MIN_MS = 1800;
+    private static final long SPLASH_MAX_MS = 3000;
 
     private WebView webView;
     private SharedPreferences prefs;
@@ -345,21 +347,21 @@ public class MainActivity extends Activity {
         progressParams.bottomMargin = dp(72);
         splash.addView(progressWrap, progressParams);
         progress.setScaleX(0f);
-        progress.animate().scaleX(1f).setDuration(900).start();
+        progress.animate().scaleX(1f).setDuration(SPLASH_MIN_MS).start();
 
         root.addView(splash, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         splashOverlay = splash;
-        view.postDelayed(this::maybeDismissSplash, 900);
-        view.postDelayed(this::dismissSplash, 2500);
+        view.postDelayed(this::maybeDismissSplash, SPLASH_MIN_MS);
+        view.postDelayed(this::dismissSplash, SPLASH_MAX_MS);
     }
 
     private void maybeDismissSplash() {
         if (splashOverlay == null || splashDone) return;
         long elapsed = SystemClock.elapsedRealtime() - splashStart;
-        if (!splashPageReady && elapsed < 2500) return;
-        if (elapsed < 900) {
-            splashOverlay.postDelayed(this::maybeDismissSplash, 900 - elapsed);
+        if (!splashPageReady && elapsed < SPLASH_MAX_MS) return;
+        if (elapsed < SPLASH_MIN_MS) {
+            splashOverlay.postDelayed(this::maybeDismissSplash, SPLASH_MIN_MS - elapsed);
             return;
         }
         dismissSplash();

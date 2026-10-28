@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeRoots, randomToken } from "./util.js";
 
-export const VERSION = "0.1.6";
+export const VERSION = "0.1.7";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PUBLIC_DIR = path.resolve(HERE, "..", "public");
 

@@ -99,7 +99,7 @@ tailscale serve status
 
 两种任选：
 
-- **APK**：从 [Releases](https://github.com/helingfeng-hub/omp-mobile/releases) 下载 `omp-mobile-0.1.6.apk`，允许“未知来源”后安装。
+- **APK**：从 [Releases](https://github.com/helingfeng-hub/omp-mobile/releases) 下载 `omp-mobile-0.1.7.apk`，允许“未知来源”后安装。
 - **PWA**：Chrome 打开 bridge 地址 → 菜单 → 添加到主屏幕。
 
 首次打开填 bridge 地址（例如 `https://host.tailnet.ts.net/`）；进入后在右上角 ⚙ 填 API token。APK 里**长按页面**可重新设置地址。
@@ -277,7 +277,7 @@ loginctl enable-linger "$USER"      # 注销后继续运行
 
 ```bash
 ANDROID_HOME=/path/to/android-sdk \
-VERSION="0.1.6" VERSION_NAME="0.1.6" VERSION_CODE=7 \
+VERSION="0.1.7" VERSION_NAME="0.1.7" VERSION_CODE=8 \
 ./scripts/build-android.sh
 ```
 

@@ -1,8 +1,8 @@
-const CACHE = "omp-mobile-v19";
+const CACHE = "omp-mobile-v20";
 const ASSETS = [
   "/",
-  "/app.js?v=0.1.17",
-  "/styles.css?v=0.1.17",
+  "/app.js?v=0.1.18",
+  "/styles.css?v=0.1.18",
   "/manifest.webmanifest",
   "/icons/icon.svg",
   "/icons/icon-192.png",

@@ -246,7 +246,7 @@ node src\index.js
 ```bash
 mkdir -p ~/.config/systemd/user
 cp deploy/omp-mobile.service.example ~/.config/systemd/user/omp-mobile.service
-# 按需修改路径/用户/环境变量
+# 按需修改路径/用户/环境变量；ExecStart 的 node 换成 `which node` 的输出
 systemctl --user daemon-reload
 systemctl --user enable --now omp-mobile
 loginctl enable-linger "$USER"      # 注销后继续运行

@@ -11,7 +11,7 @@ omp mobile：把电脑里的 omp 搬到手机上。bridge 在本机运行，手�
 - `src/sessions.js` 管理会话生命周期。启动会话后轮询 `omp collab list --json` 等待 Collab host 出现，再取 control 或 view 链接。
 - `src/collab.js` 解析 collab 输出、挑选 host、校验链接协议，只接受 HTTPS 或 localhost 的 HTTP。
 - `src/terminal.js` 发放一次性 ticket 并挂接 PTY，输入输出走 WebSocket。
-- `public/app.js` 是控制台前端，包含会话列表、聊天 iframe 与 xterm 终端。`android/` 只提供 WebView 壳与 APK 自更新检查，页面与 PWA 共用同一套静态资源。
+- `public/app.js` 是控制台前端，包含会话列表与聊天 iframe。`android/` 只提供 WebView 壳与 APK 自更新检查，页面与 PWA 共用同一套静态资源。
 - 系统服务样例在 `deploy/omp-mobile.service.example`，本地 relay、冒烟脚本与 APK 构建脚本在 `scripts/`。
 
 ## 目录
@@ -19,7 +19,7 @@ omp mobile：把电脑里的 omp 搬到手机上。bridge 在本机运行，手�
 | 路径 | 用途 |
 |---|---|
 | `src/` | bridge 服务端（Node ESM） |
-| `public/` | PWA 控制台与 xterm 资源 |
+| `public/` | PWA 控制台 |
 | `android/` | WebView 壳与 APK 更新检查 |
 | `scripts/` | 本地 relay、冒烟脚本、APK 构建 |
 | `test/` | `node:test` 单元与 API 测试 |

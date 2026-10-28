@@ -1,14 +1,19 @@
 package dev.omp.mobile;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.InputType;
+import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -19,6 +24,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import org.json.JSONObject;
 
 import java.net.URI;
 
@@ -45,10 +52,15 @@ public class MainActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(true);
 
         String saved = prefs.getString(KEY_URL, "");
+        if (saved.isEmpty() && !LocalConfig.DEFAULT_URL.isEmpty()) {
+            saved = LocalConfig.DEFAULT_URL;
+            prefs.edit().putString(KEY_URL, saved).apply();
+        }
         if (saved.isEmpty()) {
             showSetup(saved);
         } else {
             showWeb(saved);
+            new UpdateChecker(this, saved).check();
         }
     }
 
@@ -132,6 +144,25 @@ public class MainActivity extends Activity {
         });
         content.addView(open, openParams);
 
+        Button update = new Button(this);
+        update.setText("检查更新");
+        update.setAllCaps(false);
+        update.setTextSize(15);
+        update.setTextColor(Color.parseColor(TEXT));
+        update.setBackground(rounded(PANEL, BORDER, 12));
+        LinearLayout.LayoutParams updateParams = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(46));
+        updateParams.topMargin = dp(8);
+        update.setOnClickListener(view -> {
+            String target = normalizeUrl(input.getText().toString());
+            if (target == null) {
+                Toast.makeText(this, "请先填入有效的 bridge 地址", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            new UpdateChecker(this, target).check();
+        });
+        content.addView(update, updateParams);
+
         TextView note = label(
             "不要把这个端口映射到公网。bridge 应只监听 127.0.0.1，并通过 Tailscale Serve 暴露。\n\n进入后长按页面可重新设置地址。",
             12, MUTED);
@@ -175,6 +206,7 @@ public class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSupportMultipleWindows(false);
+
         view.setWebViewClient(new WebViewClient());
         view.setWebChromeClient(new WebChromeClient());
         view.setOnLongClickListener(v -> {
@@ -185,12 +217,32 @@ public class MainActivity extends Activity {
         root.addView(view, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         webView = view;
+        if (!LocalConfig.DEFAULT_TOKEN.isEmpty()) {
+            view.postDelayed(() -> injectTokenWhenReady(view, 0), 500);
+        }
         if (!prefs.getBoolean("hint-shown", false)) {
             Toast.makeText(this, "提示：长按页面可修改 bridge 地址", Toast.LENGTH_LONG).show();
             prefs.edit().putBoolean("hint-shown", true).apply();
         }
 
         setContentView(root);
+    }
+
+    private void injectTokenWhenReady(WebView view, int attempt) {
+        if (LocalConfig.DEFAULT_TOKEN.isEmpty()) return;
+        String current = view.getUrl();
+        if (view.getProgress() >= 100 && current != null && current.startsWith("https://")) {
+            view.evaluateJavascript(
+                "localStorage.setItem('omp-mobile.token', " +
+                    JSONObject.quote(LocalConfig.DEFAULT_TOKEN) + ");",
+                null
+            );
+            view.postDelayed(() -> view.reload(), 250);
+            return;
+        }
+        if (attempt < 40) {
+            view.postDelayed(() -> injectTokenWhenReady(view, attempt + 1), 300);
+        }
     }
 
     @Override

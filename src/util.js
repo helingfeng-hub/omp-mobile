@@ -120,6 +120,7 @@ const MIME = {
   ".webmanifest": "application/manifest+json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".apk": "application/vnd.android.package-archive",
   ".ico": "image/x-icon",
   ".map": "application/json; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",

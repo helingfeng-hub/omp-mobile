@@ -1,7 +1,12 @@
 node_modules/
 android/build/
+dist/
 *.jks
 *.keystore
 *.idsig
 .DS_Store
 npm-debug.log*
+public/omp-mobile-personal.apk
+dist/*personal*
+public/omp-mobile-latest.apk
+public/update.json

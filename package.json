@@ -1,7 +1,8 @@
 {
   "name": "omp-mobile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Remote Android/PWA control surface for omp: launch omp in tmux and join its Collab session.",
   "scripts": {

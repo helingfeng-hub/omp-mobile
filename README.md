@@ -308,7 +308,7 @@ npm run smoke   # 真实 omp + tmux + 本地 relay；创建并清理临时 profi
 
 ```text
 src/            bridge（Node ESM）
-public/         PWA 控制台 + xterm 资源
+public/         PWA 控制台
 android/        Android WebView 壳
 scripts/        本地 relay、smoke、Android 构建
 test/           node:test
@@ -328,4 +328,4 @@ deploy/         systemd 示例
 
 [MIT](LICENSE) © 2026 helingfeng
 
-感谢 [omp](https://github.com/can1357/oh-my-pi) 及其 Collab 协议、[Tailscale](https://tailscale.com)、[xterm.js](https://xtermjs.org)、[node-pty](https://github.com/microsoft/node-pty) 和 [ws](https://github.com/websockets/ws)。
+感谢 [omp](https://github.com/can1357/oh-my-pi) 及其 Collab 协议、[Tailscale](https://tailscale.com)、[node-pty](https://github.com/microsoft/node-pty) 和 [ws](https://github.com/websockets/ws)。

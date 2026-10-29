@@ -2,32 +2,29 @@ package dev.omp.mobile;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.app.ProgressDialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
-import android.provider.Settings;
 import android.widget.Toast;
 
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.Locale;
 
 final class UpdateChecker {
     private static final int CONNECT_TIMEOUT_MS = 15_000;
     private static final int READ_TIMEOUT_MS = 30_000;
-    private static final long MAX_APK_BYTES = 50L * 1024L * 1024L;
+    private static final long SKIP_MS = 24L * 60L * 60L * 1000L;
+    private static final String PREFS = "omp-mobile";
+    private static final String KEY_SKIP_VERSION = "update-skip-version";
+    private static final String KEY_SKIP_AT = "update-skip-at";
 
     private final Activity activity;
     private final String baseUrl;
@@ -39,10 +36,15 @@ final class UpdateChecker {
     }
 
     void check() {
+        check(false);
+    }
+
+    void check(boolean manual) {
         if (baseUrl.isEmpty()) return;
         new Thread(() -> {
             try {
-                JSONObject manifest = fetchJson(new URL(baseUrl + "update.json"));
+                String manifestUrl = baseUrl + "update.json?t=" + System.currentTimeMillis();
+                JSONObject manifest = fetchJson(new URL(manifestUrl));
                 long remoteCode = manifest.optLong("versionCode", 0L);
                 PackageInfo info = activity.getPackageManager()
                     .getPackageInfo(activity.getPackageName(), 0);
@@ -53,85 +55,57 @@ final class UpdateChecker {
                 String remoteName = manifest.optString("versionName", "").trim();
                 boolean newer;
                 if (!currentName.isEmpty() && !remoteName.isEmpty()) {
-                    // Version name is authoritative. This prevents an endless prompt
-                    // when the installed version name already matches the manifest.
                     newer = compareVersions(remoteName, currentName) > 0;
                 } else {
                     newer = remoteCode > currentCode;
                 }
-                if (!newer) return;
-                String titleName = remoteName.isEmpty() ? "新版本" : remoteName;
-                String currentLabel = currentName.isEmpty()
-                    ? String.valueOf(currentCode)
-                    : currentName;
-                String notes = manifest.optString("notes", "");
-                String message = "当前版本：" + currentLabel + "\n最新版本：" + titleName
-                    + (notes.isEmpty() ? "" : "\n\n" + notes);
-                activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
-                    .setTitle("发现新版本 " + titleName)
-                    .setMessage(message)
-                    .setPositiveButton("更新", (dialog, which) -> download(manifest))
-                    .setNegativeButton("稍后", null)
-                    .show());
-            } catch (Exception ignored) {
-                // Missing manifest, offline Tailscale, or malformed response: stay silent.
-            }
-        }).start();
-    }
-
-    private void download(JSONObject manifest) {
-        final ProgressDialog progress = new ProgressDialog(activity);
-        progress.setMessage("正在下载更新…");
-        progress.setCancelable(false);
-        progress.show();
-
-        new Thread(() -> {
-            try {
-                String apkPath = manifest.getString("apk");
-                URL apkUrl = new URL(new URL(baseUrl), apkPath);
+                if (!newer) {
+                    if (manual) {
+                        showToast(currentName.isEmpty()
+                            ? "已是最新版本"
+                            : "已是最新版本 " + currentName);
+                    }
+                    return;
+                }
+                String skipKey = remoteName.isEmpty() ? String.valueOf(remoteCode) : remoteName;
+                SharedPreferences prefs = activity.getSharedPreferences(PREFS, Activity.MODE_PRIVATE);
+                if (!manual
+                    && skipKey.equals(prefs.getString(KEY_SKIP_VERSION, ""))
+                    && System.currentTimeMillis() - prefs.getLong(KEY_SKIP_AT, 0L) < SKIP_MS) {
+                    return;
+                }
+                URL apkUrl = new URL(new URL(baseUrl), manifest.getString("apk"));
                 if (!"https".equalsIgnoreCase(apkUrl.getProtocol())) {
                     throw new IOException("更新地址必须使用 HTTPS");
                 }
-                String expected = manifest.optString("sha256", "").toLowerCase(Locale.US);
-                File target = new File(activity.getCacheDir(), "update.apk");
-                downloadFile(apkUrl, target);
-                if (!expected.isEmpty() && !sha256(target).equals(expected)) {
-                    //noinspection ResultOfMethodCallIgnored
-                    target.delete();
-                    throw new IOException("APK 校验失败");
-                }
-                activity.runOnUiThread(() -> {
-                    progress.dismiss();
-                    install(target);
-                });
+                String separator = apkUrl.getQuery() == null ? "?" : "&";
+                URL downloadUrl = new URL(apkUrl + separator + "v=" + remoteCode + "&t=" + System.currentTimeMillis());
+                String title = remoteName.isEmpty() ? "新版本" : remoteName;
+                String notes = manifest.optString("notes", "");
+                String message = "将打开浏览器下载新的安装包。\n\n"
+                    + (notes.isEmpty() ? "安装前请允许浏览器安装未知应用。" : notes);
+                activity.runOnUiThread(() -> new AlertDialog.Builder(activity)
+                    .setTitle("发现新版本 " + title)
+                    .setMessage(message)
+                    .setPositiveButton("下载", (dialog, which) -> openInBrowser(downloadUrl))
+                    .setNegativeButton("稍后", (dialog, which) -> prefs.edit()
+                        .putString(KEY_SKIP_VERSION, skipKey)
+                        .putLong(KEY_SKIP_AT, System.currentTimeMillis())
+                        .apply())
+                    .show());
             } catch (Exception error) {
-                activity.runOnUiThread(() -> {
-                    progress.dismiss();
-                    Toast.makeText(
-                        activity,
-                        "更新失败: " + String.valueOf(error.getMessage()),
-                        Toast.LENGTH_LONG
-                    ).show();
-                });
+                if (manual) showToast("检查更新失败，请确认网络");
             }
         }).start();
     }
 
-    private void install(File apk) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            && !activity.getPackageManager().canRequestPackageInstalls()) {
-            Toast.makeText(activity, "请允许安装未知应用后重试", Toast.LENGTH_LONG).show();
-            Intent settings = new Intent(
-                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:" + activity.getPackageName())
-            );
-            activity.startActivity(settings);
-            return;
-        }
-        Uri uri = Uri.parse("content://" + ApkProvider.AUTHORITY + "/update.apk");
-        Intent intent = new Intent(Intent.ACTION_VIEW);
-        intent.setDataAndType(uri, "application/vnd.android.package-archive");
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+    private void showToast(String message) {
+        activity.runOnUiThread(() -> Toast.makeText(activity, message, Toast.LENGTH_SHORT).show());
+    }
+
+    private void openInBrowser(URL url) {
+        Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url.toString()));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         activity.startActivity(intent);
     }
 
@@ -160,7 +134,10 @@ final class UpdateChecker {
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
         connection.setReadTimeout(READ_TIMEOUT_MS);
+        connection.setUseCaches(false);
         connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Cache-Control", "no-cache, no-store, max-age=0");
+        connection.setRequestProperty("Pragma", "no-cache");
         connection.setRequestProperty("User-Agent", "omp-mobile-updater");
         try {
             int status = connection.getResponseCode();
@@ -175,52 +152,11 @@ final class UpdateChecker {
         }
     }
 
-    private static void downloadFile(URL url, File target) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        connection.setReadTimeout(READ_TIMEOUT_MS);
-        connection.setRequestProperty("User-Agent", "omp-mobile-updater");
-        try {
-            int status = connection.getResponseCode();
-            if (status != HttpURLConnection.HTTP_OK) {
-                throw new IOException("HTTP " + status);
-            }
-            long length = connection.getContentLength();
-            if (length > MAX_APK_BYTES) throw new IOException("APK 太大");
-            try (InputStream input = connection.getInputStream();
-                 OutputStream output = new FileOutputStream(target)) {
-                byte[] buffer = new byte[16 * 1024];
-                long total = 0;
-                int read;
-                while ((read = input.read(buffer)) != -1) {
-                    total += read;
-                    if (total > MAX_APK_BYTES) throw new IOException("APK 太大");
-                    output.write(buffer, 0, read);
-                }
-            }
-        } finally {
-            connection.disconnect();
-        }
-    }
-
     private static String readString(InputStream input) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         byte[] buffer = new byte[4096];
         int read;
         while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
         return new String(output.toByteArray(), StandardCharsets.UTF_8);
-    }
-
-    private static String sha256(File file) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream input = new java.io.FileInputStream(file)) {
-            byte[] buffer = new byte[16 * 1024];
-            int read;
-            while ((read = input.read(buffer)) != -1) digest.update(buffer, 0, read);
-        }
-        byte[] value = digest.digest();
-        StringBuilder text = new StringBuilder(value.length * 2);
-        for (byte b : value) text.append(String.format(Locale.US, "%02x", b & 0xff));
-        return text.toString();
     }
 }

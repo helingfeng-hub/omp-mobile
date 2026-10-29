@@ -4,7 +4,7 @@ import path from "node:path";
 import { WebSocketServer } from "ws";
 import { createAuth } from "./auth.js";
 import { createAdapter } from "./host.js";
-import { SessionManager } from "./sessions.js";
+import { SessionManager, pickActiveSession } from "./sessions.js";
 import { attachTerminal, TerminalTickets } from "./terminal.js";
 import { AppError, mimeType, readJsonBody } from "./util.js";
 
@@ -61,6 +61,11 @@ function serveStatic(res, publicDir, pathname) {
   }
   if (decoded.includes("\0")) return sendText(res, 400, "bad path");
   const relative = decoded === "/" ? "index.html" : decoded.replace(/^\/+/, "");
+  if (relative === "update.json" || relative.endsWith(".apk")) {
+    console.log(
+      `STATIC ${res.req?.method || "GET"} /${relative} ua=${res.req?.headers["user-agent"] || "-"}`,
+    );
+  }
   const file = path.resolve(publicDir, relative);
   const root = path.resolve(publicDir);
   if (file !== root && !file.startsWith(`${root}${path.sep}`)) {
@@ -74,11 +79,13 @@ function serveStatic(res, publicDir, pathname) {
   }
   if (!stat.isFile()) return sendText(res, 404, "not found");
   const body = fs.readFileSync(file);
+  const noStore = relative === "update.json" || relative.endsWith(".apk");
   securityHeaders(res);
   res.writeHead(200, {
     "content-type": mimeType(file),
     "content-length": body.length,
-    "cache-control": "no-cache",
+    "cache-control": noStore ? "no-store, no-cache, must-revalidate, max-age=0" : "no-cache",
+    ...(noStore ? { pragma: "no-cache", expires: "0" } : {}),
   });
   res.end(res.req?.method === "HEAD" ? undefined : body);
 }
@@ -88,6 +95,7 @@ export async function createServer(config, deps = {}) {
   const adapter = deps.adapter ?? (await createAdapter(config));
   const manager = deps.manager ?? new SessionManager(config, adapter);
   const tickets = new TerminalTickets();
+  const seenClients = new Set();
   let healthCache = { at: 0, value: null };
 
   async function getHealth(force = false) {
@@ -132,6 +140,12 @@ export async function createServer(config, deps = {}) {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
       const pathname = url.pathname;
+      const userAgent = req.headers["user-agent"] || "";
+      if (pathname === "/api/state" && userAgent.includes("omp-mobile/")
+          && !seenClients.has(userAgent)) {
+        seenClients.add(userAgent);
+        console.log(`CLIENT ${userAgent}`);
+      }
       if (req.method === "GET" && pathname === "/healthz") {
         return sendJson(res, 200, { ok: true });
       }
@@ -163,17 +177,45 @@ export async function createServer(config, deps = {}) {
           terminal: config.terminalEnabled && Boolean(adapter.pty),
           terminalUnavailable: adapter.terminalUnavailable ?? null,
           sessions,
+          workstationSessions: manager.workstationSessions
+            ? await manager.workstationSessions()
+            : [],
+          activeSession: pickActiveSession(sessions),
           health: await getHealth(),
         });
       }
 
+      if (req.method === "GET" && pathname === "/api/live") {
+        let name = url.searchParams.get("session");
+        if (!name) {
+          const sessions = await manager.refresh({ force: false });
+          name = pickActiveSession(sessions);
+        }
+        if (!name) throw new AppError("no active session", 404, "no_active_session");
+        return sendJson(res, 200, { ok: true, ...(await manager.live(name)) });
+      }
+
+      if (req.method === "GET" && pathname === "/api/monitor") {
+        let name = url.searchParams.get("session");
+        if (!name) {
+          const sessions = await manager.refresh({ force: false });
+          name = pickActiveSession(sessions);
+        }
+        if (!name) throw new AppError("no active session", 404, "no_active_session");
+        return sendJson(res, 200, { ok: true, ...(await manager.monitor(name)) });
+      }
+
       if (req.method === "POST" && pathname === "/api/sessions") {
         const body = await readJsonBody(req, config.maxBodyBytes);
+        if (body.resume) {
+          const session = await manager.resumeWorkstation(String(body.resume));
+          return sendJson(res, 201, { ok: true, resumed: true, session });
+        }
         const session = await manager.start({ cwd: body.cwd });
         return sendJson(res, 201, { ok: true, session });
       }
 
-      const sessionMatch = /^\/api\/sessions\/([^/]+)(?:\/(link|output|stop|status))?$/.exec(pathname);
+      const sessionMatch = /^\/api\/sessions\/([^/]+)(?:\/(link|output|stop|status|prompt))?$/.exec(pathname);
       if (sessionMatch) {
         const name = decodeURIComponent(sessionMatch[1]);
         const action = sessionMatch[2] ?? null;
@@ -183,6 +225,10 @@ export async function createServer(config, deps = {}) {
         }
         if (req.method === "POST" && action === "stop") {
           return sendJson(res, 200, await manager.stop(name));
+        }
+        if (req.method === "POST" && action === "prompt") {
+          const body = await readJsonBody(req, config.maxBodyBytes);
+          return sendJson(res, 200, { ok: true, ...(await manager.prompt(name, body.text)) });
         }
         if (req.method === "GET" && action === "link") {
           const access = url.searchParams.get("access") === "view" ? "view" : "control";

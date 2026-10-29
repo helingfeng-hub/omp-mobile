@@ -1,10 +1,11 @@
-const CACHE = "omp-mobile-v20";
+const CACHE = "omp-mobile-v2.0.0-3";
 const ASSETS = [
   "/",
-  "/app.js?v=0.1.18",
-  "/styles.css?v=0.1.18",
+  "/app.js?v=2.0.0.2",
+  "/styles.css?v=2.0.0.2",
   "/manifest.webmanifest",
   "/icons/icon.svg",
+  "/icons/omp.svg",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",

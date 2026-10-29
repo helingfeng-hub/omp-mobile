@@ -22,8 +22,10 @@ done
 
 rm -rf "$ROOT/android/build"
 mkdir -p "$ROOT/android/build/classes" "$ROOT/android/build/dex" "$ROOT/android/build/gen" \
-  "$ROOT/android/build/genlocal/dev/omp/mobile" "$ROOT/android/build/res/mipmap-xxxhdpi" "$ROOT/dist"
+  "$ROOT/android/build/genlocal/dev/omp/mobile" "$ROOT/android/build/res/mipmap-xxxhdpi" \
+  "$ROOT/android/build/res/drawable" "$ROOT/dist"
 cp "$ROOT/public/icons/icon-512.png" "$ROOT/android/build/res/mipmap-xxxhdpi/ic_launcher.png"
+cp "$ROOT/public/icons/omp.png" "$ROOT/android/build/res/drawable/omp_logo.png"
 
 python3 - "$ROOT/android/AndroidManifest.xml" "$ROOT/android/build/AndroidManifest.xml" "$VERSION_CODE" "$VERSION_NAME" <<'PY'
 import re
@@ -72,7 +74,6 @@ PY
   "$ROOT/android/src/dev/omp/mobile/MainActivity.java" \
   "$ROOT/android/src/dev/omp/mobile/SplashWebViewClient.java" \
   "$ROOT/android/src/dev/omp/mobile/UpdateChecker.java" \
-  "$ROOT/android/src/dev/omp/mobile/ApkProvider.java" \
   "$ROOT/android/src/dev/omp/mobile/ConnectionService.java" \
   "$ROOT/android/build/gen/dev/omp/mobile/R.java" \
   "$ROOT/android/build/genlocal/dev/omp/mobile/LocalConfig.java"
@@ -108,9 +109,10 @@ echo "built $OUT"
 if [ -n "${OMP_MOBILE_URL:-}" ]; then
   SHA256="$(sha256sum "$OUT" | awk '{print $1}')"
   SIZE="$(stat -c%s "$OUT")"
+  cp "$OUT" "$ROOT/public/omp-mobile-$VERSION_NAME.apk"
   cp "$OUT" "$ROOT/public/omp-mobile-latest.apk"
   cp "$OUT" "$ROOT/public/omp-mobile-personal.apk"
-  OMP_MOBILE_UPDATE_NOTES="${OMP_MOBILE_UPDATE_NOTES:-应用内更新已启用。}" \
+  OMP_MOBILE_UPDATE_NOTES="${OMP_MOBILE_UPDATE_NOTES:-更新会在浏览器中打开新的安装包。}" \
   python3 - "$ROOT/public/update.json" "$VERSION_CODE" "$VERSION_NAME" "$SHA256" "$SIZE" <<'PY'
 import json
 import os
@@ -122,10 +124,10 @@ with open(path, "w", encoding="utf-8") as handle:
         {
             "versionCode": int(code),
             "versionName": name,
-            "apk": "omp-mobile-latest.apk",
+            "apk": "omp-mobile-%s.apk" % name,
             "sha256": sha,
             "size": int(size),
-            "notes": os.environ.get("OMP_MOBILE_UPDATE_NOTES", "应用内更新已启用。"),
+            "notes": os.environ.get("OMP_MOBILE_UPDATE_NOTES", "更新会在浏览器中打开新的安装包。"),
         },
         handle,
         ensure_ascii=False,

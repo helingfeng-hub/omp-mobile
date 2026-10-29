@@ -6,7 +6,5 @@ dist/
 *.idsig
 .DS_Store
 npm-debug.log*
-public/omp-mobile-personal.apk
-dist/*personal*
-public/omp-mobile-latest.apk
+public/omp-mobile-*.apk
 public/update.json

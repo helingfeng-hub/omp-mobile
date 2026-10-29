@@ -1,6 +1,6 @@
 {
   "name": "omp-mobile",
-  "version": "0.1.7",
+  "version": "2.0.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --test test/*.test.js",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "verify:update": "node scripts/verify-update.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

@@ -2,10 +2,12 @@ package dev.omp.mobile;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -18,8 +20,11 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.webkit.WebChromeClient;
+import android.webkit.JavascriptInterface;
+import android.webkit.JsResult;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -34,6 +39,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.net.URI;
@@ -41,6 +47,8 @@ import java.net.URI;
 public class MainActivity extends Activity {
     private static final String PREFS = "omp-mobile";
     private static final String KEY_URL = "bridge-url";
+    private static final String KEY_TOKEN = "bridge-token";
+    private static final String KEY_SESSION = "current-session";
     private static final String BG = "#080a0f";
     private static final String PANEL = "#11161f";
     private static final String BORDER = "#33405a";
@@ -50,8 +58,14 @@ public class MainActivity extends Activity {
     private static final long SPLASH_MIN_MS = 1800;
     private static final long SPLASH_MAX_MS = 3000;
 
+    public static volatile boolean visible;
+    public static volatile long backgroundAt;
+
     private WebView webView;
     private SharedPreferences prefs;
+    private View appRoot;
+    private WebView appWebView;
+    private boolean setupVisible;
     private long pausedAt;
     private View splashOverlay;
     private boolean splashDone;
@@ -62,6 +76,9 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (prefs.getString(KEY_TOKEN, "").isEmpty() && !LocalConfig.DEFAULT_TOKEN.isEmpty()) {
+            prefs.edit().putString(KEY_TOKEN, LocalConfig.DEFAULT_TOKEN).apply();
+        }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setStatusBarColor(Color.parseColor(BG));
         getWindow().setNavigationBarColor(Color.parseColor(BG));
@@ -101,6 +118,7 @@ public class MainActivity extends Activity {
 
     private void showSetup(String current) {
         webView = null;
+        setupVisible = true;
 
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -109,6 +127,10 @@ public class MainActivity extends Activity {
 
         TextView title = label("omp mobile", 28, TEXT);
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
+        ImageView brand = new ImageView(this);
+        brand.setImageResource(R.drawable.omp_logo);
+        brand.setContentDescription("omp");
+        content.addView(brand, new LinearLayout.LayoutParams(dp(88), dp(88)));
         content.addView(title);
 
         TextView intro = label(
@@ -139,25 +161,17 @@ public class MainActivity extends Activity {
         inputParams.topMargin = dp(7);
         content.addView(input, inputParams);
 
-        Button open = new Button(this);
-        open.setText("打开控制台");
-        open.setAllCaps(false);
-        open.setTextSize(16);
-        open.setTextColor(Color.parseColor("#081020"));
-        open.setBackground(rounded(ACCENT, ACCENT, 12));
-        LinearLayout.LayoutParams openParams = new LinearLayout.LayoutParams(
+        Button back = new Button(this);
+        back.setText("返回主界面");
+        back.setAllCaps(false);
+        back.setTextSize(16);
+        back.setTextColor(Color.parseColor("#081020"));
+        back.setBackground(rounded(ACCENT, ACCENT, 12));
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
-        openParams.topMargin = dp(14);
-        open.setOnClickListener(view -> {
-            String normalized = normalizeUrl(input.getText().toString());
-            if (normalized == null) {
-                Toast.makeText(this, "请输入有效的 https:// 地址（Tailscale Serve）", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            prefs.edit().putString(KEY_URL, normalized).apply();
-            showWeb(normalized);
-        });
-        content.addView(open, openParams);
+        backParams.topMargin = dp(14);
+        back.setOnClickListener(view -> returnToMain(input));
+        content.addView(back, backParams);
 
         Button update = new Button(this);
         update.setText("检查更新");
@@ -174,7 +188,7 @@ public class MainActivity extends Activity {
                 Toast.makeText(this, "请先填入有效的 bridge 地址", Toast.LENGTH_SHORT).show();
                 return;
             }
-            new UpdateChecker(this, target).check();
+            new UpdateChecker(this, target).check(true);
         });
         content.addView(update, updateParams);
 
@@ -191,7 +205,7 @@ public class MainActivity extends Activity {
         content.addView(keepAlive, keepAliveParams);
 
         TextView note = label(
-            "不要把这个端口映射到公网。bridge 应只监听 127.0.0.1，并通过 Tailscale Serve 暴露。\n\n进入后长按页面可重新设置地址。",
+            "不要把这个端口映射到公网。bridge 应只监听 127.0.0.1，并通过 Tailscale Serve 暴露。\n\n进入后可在右上角设置中重新配置连接。",
             12, MUTED);
         LinearLayout.LayoutParams noteParams = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -225,6 +239,37 @@ public class MainActivity extends Activity {
         setContentView(scroll);
     }
 
+    private void returnToMain(EditText input) {
+        String normalized = normalizeUrl(input.getText() == null ? "" : input.getText().toString());
+        if (normalized == null) {
+            Toast.makeText(this, "请输入有效的 https:// 地址（Tailscale Serve）", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String saved = prefs.getString(KEY_URL, "");
+        prefs.edit().putString(KEY_URL, normalized).apply();
+        setupVisible = false;
+        if (normalized.equals(saved) && appRoot != null) {
+            webView = appWebView;
+            setContentView(appRoot);
+            return;
+        }
+        showWeb(normalized);
+    }
+
+    private void restoreApp() {
+        if (appRoot != null) {
+            setupVisible = false;
+            webView = appWebView;
+            setContentView(appRoot);
+            return;
+        }
+        String saved = prefs.getString(KEY_URL, "");
+        if (!saved.isEmpty()) {
+            setupVisible = false;
+            showWeb(saved);
+        }
+    }
+
     private String normalizeUrl(String raw) {
         String value = raw == null ? "" : raw.trim();
         if (value.isEmpty()) return null;
@@ -254,36 +299,132 @@ public class MainActivity extends Activity {
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setSupportMultipleWindows(false);
+        String appVersion = "";
+        int appVersionCode = 0;
+        try {
+            android.content.pm.PackageInfo info = getPackageManager()
+                .getPackageInfo(getPackageName(), 0);
+            appVersion = info.versionName == null ? "" : info.versionName;
+            appVersionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                ? (int) info.getLongVersionCode()
+                : info.versionCode;
+        } catch (Exception ignored) {
+        }
+        if (!appVersion.isEmpty()) {
+            settings.setUserAgentString(
+                settings.getUserAgentString() + " omp-mobile/" + appVersion
+            );
+        }
+        if (prefs.getInt("webview-cache-version", -1) != appVersionCode) {
+            view.clearCache(true);
+            prefs.edit().putInt("webview-cache-version", appVersionCode).apply();
+        }
+        view.addJavascriptInterface(new TokenBridge(), "OmpNative");
 
         view.setWebViewClient(new SplashWebViewClient(() -> {
             splashPageReady = true;
             maybeDismissSplash();
         }));
-        view.setWebChromeClient(new WebChromeClient());
-        view.setOnLongClickListener(v -> {
-            showSetup(prefs.getString(KEY_URL, ""));
-            return true;
+        view.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onJsConfirm(WebView web, String url, String message, JsResult result) {
+                new AlertDialog.Builder(MainActivity.this)
+                    .setMessage(message)
+                    .setPositiveButton("确定", (dialog, which) -> result.confirm())
+                    .setNegativeButton("取消", (dialog, which) -> result.cancel())
+                    .setOnCancelListener(dialog -> result.cancel())
+                    .show();
+                return true;
+            }
         });
         root.addView(view, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         webView = view;
+        appRoot = root;
+        appWebView = view;
+        setupVisible = false;
         setContentView(root);
+        wireKeyboardInset(root, view);
         showSplash(root, view);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
             view.post(() ->
                 view.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false));
         }
-        view.loadUrl(url);
+        view.loadUrl(withAppVersion(url));
+        view.postDelayed(() -> maybeCheckForUpdate(url), 4500);
+        view.postDelayed(() -> captureToken(view, 0), 800);
         startConnectionService();
         requestNotificationPermission();
         if (!LocalConfig.DEFAULT_TOKEN.isEmpty()) {
             view.postDelayed(() -> injectTokenWhenReady(view, 0), 500);
         }
         if (!prefs.getBoolean("hint-shown", false)) {
-            Toast.makeText(this, "提示：长按页面可修改 bridge 地址", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "提示：右上角齿轮可修改连接", Toast.LENGTH_LONG).show();
             prefs.edit().putBoolean("hint-shown", true).apply();
         }
+    }
+
+    // Android 15 对 targetSdk 35 强制全面屏，窗口不再因输入法而缩小。
+    // 这里按 IME inset 缩小 WebView，页面视口随之变矮，输入框抬到输入法上方。
+    private void wireKeyboardInset(FrameLayout root, WebView view) {
+        root.setOnApplyWindowInsetsListener((target, insets) -> {
+            target.post(() -> applyKeyboardInset(root, view, insets));
+            return insets;
+        });
+        root.getViewTreeObserver().addOnGlobalLayoutListener(
+            () -> applyKeyboardInset(root, view, null));
+        root.requestApplyInsets();
+    }
+
+    private void applyKeyboardInset(FrameLayout root, WebView view, WindowInsets source) {
+        if (view.getParent() != root) return;
+        int keyboard = 0;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            WindowInsets insets = source != null ? source : root.getRootWindowInsets();
+            if (insets != null) {
+                keyboard = insets.getInsets(WindowInsets.Type.ime()).bottom;
+            }
+            if (keyboard == 0) {
+                // 部分 WebView 不上报 IME inset，按窗口可见区域兜底。
+                Rect visible = new Rect();
+                root.getWindowVisibleDisplayFrame(visible);
+                int[] origin = new int[2];
+                root.getLocationOnScreen(origin);
+                int covered = origin[1] + root.getHeight() - visible.bottom;
+                if (covered > dp(100)) keyboard = covered;
+            }
+        }
+        setWebViewBottomMargin(view, keyboard);
+    }
+
+    private void setWebViewBottomMargin(WebView view, int margin) {
+        ViewGroup.LayoutParams params = view.getLayoutParams();
+        if (!(params instanceof FrameLayout.LayoutParams)) return;
+        FrameLayout.LayoutParams frameParams = (FrameLayout.LayoutParams) params;
+        if (frameParams.bottomMargin == margin) return;
+        frameParams.bottomMargin = margin;
+        view.setLayoutParams(frameParams);
+    }
+
+    private String withAppVersion(String url) {
+        try {
+            String version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+            if (version == null || version.isEmpty()) return url;
+            int hash = url.indexOf('#');
+            String base = hash >= 0 ? url.substring(0, hash) : url;
+            String suffix = hash >= 0 ? url.substring(hash) : "";
+            String separator = base.contains("?") ? "&" : "?";
+            return base + separator + "app=" + Uri.encode(version) + suffix;
+        } catch (Exception ignored) {
+            return url;
+        }
+    }
+
+    private void maybeCheckForUpdate(String baseUrl) {
+        if (baseUrl == null || baseUrl.isEmpty()) return;
+        if (isFinishing() || isDestroyed()) return;
+        new UpdateChecker(this, baseUrl).check();
     }
 
     private void showSplash(FrameLayout root, WebView view) {
@@ -307,7 +448,7 @@ public class MainActivity extends Activity {
         center.setGravity(Gravity.CENTER_HORIZONTAL);
 
         ImageView logo = new ImageView(this);
-        logo.setImageResource(R.mipmap.ic_launcher);
+        logo.setImageResource(R.drawable.omp_logo);
         logo.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         center.addView(logo, new LinearLayout.LayoutParams(dp(96), dp(96)));
 
@@ -318,13 +459,6 @@ public class MainActivity extends Activity {
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         wordmarkParams.topMargin = dp(18);
         center.addView(wordmark, wordmarkParams);
-
-        TextView subtitle = label("远程会话", 12, MUTED);
-        subtitle.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams subtitleParams = new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        subtitleParams.topMargin = dp(6);
-        center.addView(subtitle, subtitleParams);
 
         splash.addView(center, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -409,6 +543,47 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void captureToken(WebView view, int attempt) {
+        if (view != webView) return;
+        view.evaluateJavascript(
+            "(function(){try{return localStorage.getItem('omp-mobile.token')||''}catch(e){return ''}})()",
+            value -> {
+                String token = jsString(value);
+                if (!token.isEmpty()) {
+                    prefs.edit().putString(KEY_TOKEN, token).apply();
+                    return;
+                }
+                if (attempt < 20) view.postDelayed(() -> captureToken(view, attempt + 1), 1000);
+            }
+        );
+    }
+
+    private static String jsString(String value) {
+        if (value == null || "null".equals(value)) return "";
+        try {
+            return new JSONArray("[" + value + "]").getString(0).trim();
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
+    private final class TokenBridge {
+        @JavascriptInterface
+        public void setToken(String token) {
+            prefs.edit().putString(KEY_TOKEN, token == null ? "" : token.trim()).apply();
+        }
+
+        @JavascriptInterface
+        public void setSession(String name) {
+            prefs.edit().putString(KEY_SESSION, name == null ? "" : name.trim()).apply();
+        }
+
+        @JavascriptInterface
+        public void openSetup() {
+            runOnUiThread(() -> showSetup(prefs.getString(KEY_URL, "")));
+        }
+    }
+
     private void requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= 33
             && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -443,6 +618,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (setupVisible) {
+            restoreApp();
+            return;
+        }
         if (webView != null && webView.canGoBack()) {
             webView.goBack();
             return;
@@ -454,6 +633,8 @@ public class MainActivity extends Activity {
     protected void onPause() {
         // Keep the WebView running while the app is in the background.
         // The foreground ConnectionService keeps the process/network alive.
+        visible = false;
+        backgroundAt = System.currentTimeMillis();
         pausedAt = SystemClock.elapsedRealtime();
         super.onPause();
     }
@@ -461,6 +642,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        visible = true;
         if (webView == null) return;
         webView.onResume();
         if (pausedAt != 0) {
@@ -488,6 +670,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        visible = false;
         if (webView != null) {
             webView.loadUrl("about:blank");
             webView.destroy();

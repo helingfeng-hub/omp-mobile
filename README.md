@@ -6,7 +6,7 @@
 
 **把电脑里的 [omp](https://github.com/can1357/oh-my-pi) 搬到手机上。**
 
-omp mobile 是 omp 的远程控制面板：电脑上跑一个 bridge，手机经 Tailscale 私有网络连进来，查看并继续电脑上的 omp 会话。打开 App 时如果还没有会话，会自动在默认目录启动一个；已有会话直接列出。聊天内容走 omp Collab 的端到端加密房间，不开放公网端口。
+omp mobile 是 omp 的远程控制面板：电脑上跑一个 bridge，手机经 Tailscale 私有网络连进来，查看并继续电脑上的 omp 会话。打开 App 时如果还没有会话，会自动在默认目录启动一个；已有会话直接列出。默认聊天是 bridge 读取会话文件的实时视图，提示词从 bridge 注入 tmux；完整 Collab 房间通过按钮打开，不开放公网端口。
 
 适合已经在电脑上用 omp 写代码、但人经常不在工位的人：地铁上补一句需求、夜里盯长任务、出门前审一眼 diff。
 
@@ -26,8 +26,16 @@ omp mobile 是 omp 的远程控制面板：电脑上跑一个 bridge，手机经
 | 实时对话 | 流式文本、thinking、工具卡片、子代理进度、模型与上下文状态 |
 | 会话状态 | 当前会话顶部显示会话名、模型和上下文使用量 |
 | 启动画面 | 冷启动短暂展示 omp mobile Logo，再进入会话列表 |
-| 远程控制 | 发提示词、打断、回答 omp 的确认/选择弹窗 |
-| 会话列表 | 显示主机名和会话；点一下进入 Collab 对话 |
+| 远程控制 | 原生输入框发提示词；打开 Collab 处理确认/选择弹窗 |
+| 会话列表 | 显示主机名和会话标题；点任意会话；不是 bridge 托管、电脑上正在运行的会话先只读，停止后手机自动接管；已结束的会话直接恢复输入；手机创建的 tmux 会话右侧 ✕ 可停止并删除 |
+| 工作站会话 | 工作站缓存的历史会话也在同一个列表；恢复使用会话记录的 cwd，不需要手机重新创建，host 重建后自动刷新链接 |
+| 实时进度 | 运行中的会话显示只读实时进度；恢复后底部是原生输入框，多行自动增高，消息区独立滚动 |
+| 连接提示 | 打开 Collab 房间时短暂显示连接提示；guest 加入提示 0.75 秒后隐藏 |
+| 文本复制 | 长按对话文本使用系统选择菜单，可选择复制、全选复制 |
+| 设置 | 主界面右上角齿轮；APK 打开原生连接设置，可点“返回主界面”回到原页面 |
+| 自动标题 | 显示 omp 自动生成的会话标题，跟随电脑端的标题更新，不用手动重命名 |
+| 完成通知 | Android 壳在后台轮询手机当前会话；回合结束（`busy=false`）后发系统通知，点通知回到会话 |
+| 更新 | 每次启动检查版本，只有远端版本更高才弹窗；点“稍后”当天不再重复提示，下载由系统浏览器安装 |
 | 两种壳 | Android APK 或 PWA（添加到主屏幕），同一套深色移动端 UI |
 | 只读分享 | 生成 view-only 链接给朋友围观进度，不给执行权限 |
 
@@ -77,7 +85,8 @@ OMP_REMOTE_ROOTS="$HOME/projects" npm start
 ```
 
 - 首次启动会生成并打印一次 API token，之后从 `~/.config/omp-remote/token` 读取（权限 `0600`）。
-- `OMP_REMOTE_ROOTS` 是手机能启动会话的目录白名单，别设成 `/` 或整个 `$HOME`。
+- `OMP_REMOTE_ROOTS` 是手机新建会话的目录白名单，别设成 `/` 或整个 `$HOME`。
+- 恢复工作站历史会话时使用会话文件记录的 cwd，不受这个白名单限制；新建会话仍受限制。
 - 验证：电脑浏览器打开 `http://127.0.0.1:8787`，输入 token，能看到主机名和会话列表。
 
 ### 3. 电脑：发布到 tailnet
@@ -99,7 +108,7 @@ tailscale serve status
 
 两种任选：
 
-- **APK**：从 [Releases](https://github.com/helingfeng-hub/omp-mobile/releases) 下载 `omp-mobile-0.1.7.apk`，允许“未知来源”后安装。
+- **APK**：从 [Releases](https://github.com/helingfeng-hub/omp-mobile/releases) 下载 `omp-mobile-2.0.0.apk`，允许“未知来源”后安装。
 - **PWA**：Chrome 打开 bridge 地址 → 菜单 → 添加到主屏幕。
 
 首次打开填 bridge 地址（例如 `https://host.tailnet.ts.net/`）；进入后在右上角 ⚙ 填 API token。APK 里**长按页面**可重新设置地址。
@@ -133,8 +142,11 @@ omp collab link <instanceId|pid>         # control 链接（等于执行权限�
 ```mermaid
 flowchart LR
   P["手机 APK / PWA"] -->|"HTTPS + Bearer"| B["bridge 127.0.0.1:8787"]
-  P -->|"WSS 端到端加密"| R["my.omp.sh relay"] --> O["omp"]
+  B -->|"读会话文件 / api/live"| P
+  P -->|"原生输入框 / prompt"| B
+  B -->|"tmux send-keys"| O["omp"]
   P -.->|"WSS + 一次性 ticket"| B -->|"PTY"| T["tmux / shell"]
+  P -->|"Collab 按钮 / WSS E2E"| R["my.omp.sh relay"] --> O
   B -->|"tmux new-session"| O
   O --> F["你的项目 / 命令 / 子代理"]
 ```
@@ -144,15 +156,23 @@ flowchart LR
 1. 手机 `POST /api/sessions {cwd}`。
 2. bridge 在 tmux 里运行 `omp --config <overlay> --cwd <cwd>`；overlay 设置 `collab.autoStart: control`。
 3. bridge 轮询 `omp collab list --json`，找到对应 host。
-4. bridge 调 `omp collab link <instanceId> --json`，拿到 control/view URL。
-5. 手机在 WebView/iframe 中打开该链接，后续提示词和打断都走 Collab 的 E2E 房间。
+4. 手机默认 `GET /api/live?session=<name>` 拉实时消息；原生输入框 `POST /api/sessions/<name>/prompt {text}`，bridge 用 `tmux set-buffer`、`paste-buffer` 和 Enter 注入 host。
+5. 需要完整 Collab 房间或审批时，手机 `GET /api/sessions/<name>/link?access=control|view`，在 iframe 打开该链接。
 6. `/new`、`/resume` 会轮换 generation；链接过期时 bridge 自动重新获取。
+
+从工作站历史会话继续时，链路是：
+
+1. 手机点会话；bridge 判断该会话是否仍在电脑上运行。有 host，或会话文件仍被打开，或最后一条事件还不是 `session_exit`，手机进入只读实时视图，不启动 writer。
+2. 电脑上的会话结束后，omp 写入 `session_exit`；手机检测到文件已结束且没有进程占用，自动 `POST /api/sessions {resume: "<sessionId>"}`。
+3. bridge 读取该会话的 cwd，确认会话已结束且没有被占用，在 tmux 里运行 `omp --config <overlay> --cwd <cwd> --resume=<sessionId>`。
+4. bridge 等到该 `sessionId` 对应的 host 出现；手机从只读视图自动切到原生输入框。
 
 ## 安全（务必读）
 
 - **bridge 只监听 loopback**，外层用 Tailscale Serve；不要把 8787 暴露到公网。
 - **API token 是第二道门**。它保存在手机 localStorage；共用设备或录屏时注意。
-- **Collab control 链接等于电脑的远程执行权限。** 只围观就用 view 链接；手机 UI 默认取 control。
+- **原生输入框等于电脑的远程执行权限。** 提示词经 bridge 直接注入 tmux，不是 Collab guest，能触发 host 的所有工具；远程使用时按下面的方式收紧 omp 审批。
+- **Collab control 链接也等于远程执行权限。** 只围观就用 view 链接；手机打开 Collab 时按会话状态取 control 或 view。
 - **远程使用时收紧 omp 审批**：
 
   ```bash
@@ -228,7 +248,7 @@ node src\index.js
 | `OMP_REMOTE_PORT` | `8787` | 端口 |
 | `OMP_REMOTE_TOKEN` | 自动生成 | API token；也可写入 `~/.config/omp-remote/token` |
 | `OMP_REMOTE_STATE_DIR` | `~/.config/omp-remote` | token、overlay 配置 |
-| `OMP_REMOTE_ROOTS` | `$HOME` | 允许启动的工作目录；逗号或分号分隔 |
+| `OMP_REMOTE_ROOTS` | `$HOME` | 手机新建会话的工作目录白名单；恢复历史会话使用记录的 cwd；逗号或分号分隔 |
 | `OMP_REMOTE_ADAPTER` | 自动 | `linux` 或 `wsl` |
 | `OMP_REMOTE_WSL_DISTRO` | 空 | WSL 发行版名，如 `Ubuntu` |
 | `OMP_REMOTE_WSL` | `wsl.exe` | WSL 可执行文件 |
@@ -239,6 +259,7 @@ node src\index.js
 | `OMP_REMOTE_NAME` | 主机名 | 手机端显示名 |
 | `OMP_REMOTE_TERMINAL` | `1` | `0` 关闭 Shell |
 | `OMP_REMOTE_START_TIMEOUT_MS` | `30000` | 等待 Collab host 的超时 |
+| `OMP_REMOTE_SESSION_DIR` | `~/.omp/agent/sessions` | 读取 omp 会话标题，用于手机端显示和活跃会话判断 |
 | `OMP_PROFILE` | 空 | 传给 omp 的 profile；用于隔离会话/凭据 |
 
 ### 常驻运行（systemd user）
@@ -260,9 +281,11 @@ loginctl enable-linger "$USER"      # 注销后继续运行
 | --- | --- | --- |
 | GET | `/api/health` | bridge/omp/tmux 状态 |
 | GET | `/api/state` | 会话、host、roots、health |
-| POST | `/api/sessions` | `{cwd}`，启动 tmux + omp |
+| GET | `/api/live?session=` | 当前 omp 会话文件的最新消息、工具进度和上下文；ws 会话附带 `inUse`、`ended` |
+| POST | `/api/sessions` | `{cwd}` 新建 tmux + omp；`{resume}` 恢复工作站会话；运行中返回 409 `session_in_use` |
 | DELETE | `/api/sessions/:name` | 停止会话 |
 | GET | `/api/sessions/:name/link?access=control\|view` | 取 Collab 链接 |
+| POST | `/api/sessions/:name/prompt` | `{text}`，把提示词注入该 tmux 会话 |
 | GET | `/api/sessions/:name/output?lines=100` | tmux 最近输出 |
 | POST | `/api/terminal/ticket` | `{session?}` 或 `{cwd?}`，一次性终端 ticket |
 | WS | `/ws/terminal?ticket=...` | PTY 输出（binary）和输入（JSON） |
@@ -277,7 +300,7 @@ loginctl enable-linger "$USER"      # 注销后继续运行
 
 ```bash
 ANDROID_HOME=/path/to/android-sdk \
-VERSION="0.1.7" VERSION_NAME="0.1.7" VERSION_CODE=8 \
+VERSION="2.0.0" VERSION_NAME="2.0.0" VERSION_CODE=23 \
 ./scripts/build-android.sh
 ```
 
@@ -291,7 +314,7 @@ OMP_MOBILE_UPDATE_NOTES="修复..." \
 ./scripts/build-android.sh
 ```
 
-只有设置 `OMP_MOBILE_URL` 时才会生成 `public/update.json` 和 `public/omp-mobile-latest.apk`，供自建 bridge 的**应用内更新**使用。公开 Release 的 APK 不依赖它们，更新方式见 Release 页。
+只有设置 `OMP_MOBILE_URL` 时才会生成 `public/update.json` 和 `public/omp-mobile-latest.apk`。App 发现新版本后不再自行下载安装，而是用浏览器打开 `update.json` 里的 APK 链接，由系统浏览器和安装器完成更新。公开 Release 的 APK 不依赖它们，更新方式见 Release 页。
 
 签名 key 默认在 `~/.config/omp-mobile/android.keystore`。升级必须用同一把 key，否则要先卸载旧版。
 
@@ -318,8 +341,10 @@ deploy/         systemd 示例
 ## 已知边界
 
 - 电脑休眠/关机时无法远程冷启动。
-- Collab guest 不能执行 host-only 命令（`/model`、`/compact`、`/resume`、`!`、`$` 等）；需要时在电脑上操作。
-- `/new`、`/resume` 后 room generation 会轮换；在 UI 里重新点“聊天”即可让 bridge 取新链接。
+- 不是由本 bridge 托管的电脑端会话，手机只读。bridge 用 host、会话文件句柄和最后事件 `session_exit` 判断；近期没有结束标记的会话按运行中处理，超过 7 天按已放弃处理。会话正常结束后手机自动恢复并取得输入。
+- 手机接管后不要再在电脑上向同一会话输入，否则两个 omp 进程会同时写会话文件。
+- 原生输入框通过 tmux 直接输入 host，能执行 `/model`、`/compact`、`!` 等 host-only 命令；Collab guest 仍不能。审批弹窗和完整房间用 Collab 按钮打开。
+- `/new`、`/resume` 后 room generation 会轮换；Collab 视图里点“重新连接”即可让 bridge 取新链接。
 - 没有内置推送；锁屏后 WebSocket 可能断开，重开页面恢复。
 - APK 只保存一个 bridge 地址；多主机用 PWA 分别添加。
 - macOS 未验证；iOS/PWA 未验证。

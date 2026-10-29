@@ -26,9 +26,11 @@ export function parseHosts(stdout) {
   return data.hosts.filter((host) => host && typeof host.instanceId === "string" && typeof host.cwd === "string");
 }
 
-export function pickHost(hosts, { cwd, since = 0, exclude = new Set() } = {}) {
+export function pickHost(hosts, { cwd, since = 0, exclude = new Set(), sessionId } = {}) {
+  const wanted = String(sessionId || "").trim();
   const candidates = hosts
     .filter((host) => !exclude.has(host.instanceId))
+    .filter((host) => !wanted || host.sessionId === wanted)
     .filter((host) => {
       if (cwd === undefined || cwd === null) return true;
       return host.cwd === cwd;
@@ -46,6 +48,25 @@ export function pickHost(hosts, { cwd, since = 0, exclude = new Set() } = {}) {
       return (Number(b.generation) || 0) - (Number(a.generation) || 0);
     });
   return candidates[0] ?? null;
+}
+
+// A tmux session's omp process keeps its pid for the whole tmux session, while
+// collab re-hosting only bumps `generation` and `startedAt`. Matching on pid
+// therefore stays stable; the timestamp heuristic is only a last resort.
+export function findHostForSession(hosts, { pid, instanceId, generation, cwd, since, exclude } = {}) {
+  const ownPid = Number(pid) || 0;
+  const exact = instanceId
+    ? hosts.find(
+        (host) =>
+          host.instanceId === instanceId &&
+          Number(host.generation) === Number(generation) &&
+          (!ownPid || Number(host.pid) === ownPid),
+      )
+    : null;
+  if (exact) return exact;
+  const byPid = ownPid ? hosts.find((host) => Number(host.pid) === ownPid) : null;
+  if (byPid) return byPid;
+  return pickHost(hosts, { cwd, since, exclude });
 }
 
 export async function listHosts(adapter) {
@@ -85,14 +106,14 @@ export async function linkForHost(adapter, instanceId, access = "control") {
   };
 }
 
-export async function waitForHost(adapter, { cwd, since, exclude, timeoutMs } = {}) {
+export async function waitForHost(adapter, { cwd, since, exclude, sessionId, timeoutMs } = {}) {
   const deadline = Date.now() + (timeoutMs ?? adapter.config.startTimeoutMs);
   let lastHosts = [];
   let lastError = null;
   while (Date.now() < deadline) {
     try {
       lastHosts = await listHosts(adapter);
-      const host = pickHost(lastHosts, { cwd, since, exclude });
+      const host = pickHost(lastHosts, { cwd, since, exclude, sessionId });
       if (host) return host;
       lastError = null;
     } catch (err) {

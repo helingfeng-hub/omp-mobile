@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeRoots, randomToken } from "./util.js";
 
-export const VERSION = "0.1.7";
+export const VERSION = "2.0.0";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PUBLIC_DIR = path.resolve(HERE, "..", "public");
 
@@ -87,6 +87,9 @@ export function loadConfig(env = process.env, overrides = {}) {
     version: VERSION,
     publicDir: PUBLIC_DIR,
     stateDir,
+    sessionDir: path.resolve(
+      env.OMP_REMOTE_SESSION_DIR || merged.sessionDir || path.join(home, ".omp", "agent", "sessions"),
+    ),
     token,
     tokenCreated: created,
     host: env.OMP_REMOTE_HOST || merged.host || "127.0.0.1",

@@ -73,6 +73,20 @@ class BaseAdapter {
     return resolved;
   }
 
+  async validateResumeCwd(cwd) {
+    const resolved = this.pathModule.resolve(String(cwd ?? ""));
+    let stat;
+    try {
+      stat = await fs.promises.stat(resolved);
+    } catch {
+      throw new AppError(`working directory does not exist: ${resolved}`, 400, "cwd_missing");
+    }
+    if (!stat.isDirectory()) {
+      throw new AppError(`working directory is not a directory: ${resolved}`, 400, "cwd_not_dir");
+    }
+    return resolved;
+  }
+
   async toRuntimePath(hostPath) {
     return hostPath;
   }
@@ -83,6 +97,14 @@ class BaseAdapter {
 
   async listSessions() {
     throw new Error("not implemented");
+  }
+
+  async sessionInUse() {
+    return false;
+  }
+
+  async sendPrompt() {
+    throw new AppError("prompt is not supported by this adapter", 501, "prompt_unsupported");
   }
 }
 
@@ -152,8 +174,9 @@ class LinuxAdapter extends BaseAdapter {
     return result.code === 0;
   }
 
-  async startSession({ name, cwd, overlayPath }) {
-    const command = `exec ${envPrefix(this.config.sessionEnv)}${shellQuote(this.config.ompBin)} --config ${shellQuote(overlayPath)} --cwd ${shellQuote(cwd)}`;
+  async startSession({ name, cwd, overlayPath, resume }) {
+    const resumeArg = resume ? ` --resume=${shellQuote(resume)}` : "";
+    const command = `exec ${envPrefix(this.config.sessionEnv)}${shellQuote(this.config.ompBin)} --config ${shellQuote(overlayPath)} --cwd ${shellQuote(cwd)}${resumeArg}`;
     const result = await run(
       this.config.tmuxBin,
       ["new-session", "-d", "-s", name, "-c", cwd, "bash", "-lc", command],
@@ -186,6 +209,59 @@ class LinuxAdapter extends BaseAdapter {
       throw new AppError(`could not read tmux output: ${result.stderr.trim() || result.code}`, 404, "tmux_capture_failed");
     }
     return result.stdout;
+  }
+
+  async sessionInUse(file) {
+    if (!file) return false;
+    // A running omp keeps its session .jsonl open for the whole process.
+    const result = await run("fuser", ["-s", file], { timeout: 5_000 });
+    return result.code === 0;
+  }
+
+  async sendPrompt(name, text) {
+    const buffer = `omp-mobile-${process.pid}-${Date.now()}`;
+    const value = String(text ?? "");
+    const set = await run(
+      this.config.tmuxBin,
+      ["set-buffer", "-b", buffer, "--", value],
+      { timeout: 10_000 },
+    );
+    if (set.code !== 0) {
+      throw new AppError(
+        `could not stage prompt: ${(set.stderr || set.stdout).trim() || set.code}`,
+        500,
+        "prompt_stage_failed",
+      );
+    }
+    try {
+      const paste = await run(
+        this.config.tmuxBin,
+        ["paste-buffer", "-p", "-b", buffer, "-t", name],
+        { timeout: 10_000 },
+      );
+      if (paste.code !== 0) {
+        throw new AppError(
+          `could not paste prompt: ${(paste.stderr || paste.stdout).trim() || paste.code}`,
+          500,
+          "prompt_paste_failed",
+        );
+      }
+      const enter = await run(
+        this.config.tmuxBin,
+        ["send-keys", "-t", name, "Enter"],
+        { timeout: 10_000 },
+      );
+      if (enter.code !== 0) {
+        throw new AppError(
+          `could not submit prompt: ${(enter.stderr || enter.stdout).trim() || enter.code}`,
+          500,
+          "prompt_submit_failed",
+        );
+      }
+      return { sent: true };
+    } finally {
+      await run(this.config.tmuxBin, ["delete-buffer", "-b", buffer], { timeout: 5_000 });
+    }
   }
 
   spawnTerminal({ session, cwd, cols, rows }) {
@@ -226,6 +302,15 @@ class WslAdapter extends BaseAdapter {
 
   async validateCwd(cwd) {
     const resolved = super.validateCwd(cwd);
+    const result = await this.runWsl(["test", "-d", resolved], { timeout: 10_000 });
+    if (result.code !== 0) {
+      throw new AppError(`working directory does not exist in WSL: ${resolved}`, 400, "cwd_missing");
+    }
+    return resolved;
+  }
+
+  async validateResumeCwd(cwd) {
+    const resolved = this.pathModule.resolve(String(cwd ?? ""));
     const result = await this.runWsl(["test", "-d", resolved], { timeout: 10_000 });
     if (result.code !== 0) {
       throw new AppError(`working directory does not exist in WSL: ${resolved}`, 400, "cwd_missing");
@@ -281,9 +366,10 @@ class WslAdapter extends BaseAdapter {
     return parseTmuxSessions(result.stdout, this.config.sessionPrefix);
   }
 
-  async startSession({ name, cwd, overlayPath }) {
+  async startSession({ name, cwd, overlayPath, resume }) {
     const runtimeOverlay = await this.toRuntimePath(overlayPath);
-    const command = `exec ${envPrefix(this.config.sessionEnv)}${shellQuote(this.config.ompBin)} --config ${shellQuote(runtimeOverlay)} --cwd ${shellQuote(cwd)}`;
+    const resumeArg = resume ? ` --resume=${shellQuote(resume)}` : "";
+    const command = `exec ${envPrefix(this.config.sessionEnv)}${shellQuote(this.config.ompBin)} --config ${shellQuote(runtimeOverlay)} --cwd ${shellQuote(cwd)}${resumeArg}`;
     const result = await this.runWsl(
       [this.config.tmuxBin, "new-session", "-d", "-s", name, "-c", cwd, "bash", "-lc", command],
       { timeout: 15_000 },
@@ -317,6 +403,56 @@ class WslAdapter extends BaseAdapter {
       throw new AppError(`could not read WSL tmux output: ${result.stderr.trim() || result.code}`, 404, "tmux_capture_failed");
     }
     return result.stdout;
+  }
+
+  async sessionInUse(file) {
+    if (!file) return false;
+    const runtime = await this.toRuntimePath(file);
+    const result = await this.runWsl(["fuser", "-s", runtime], { timeout: 10_000 });
+    return result.code === 0;
+  }
+
+  async sendPrompt(name, text) {
+    const buffer = `omp-mobile-${process.pid}-${Date.now()}`;
+    const value = String(text ?? "");
+    const set = await this.runWsl(
+      [this.config.tmuxBin, "set-buffer", "-b", buffer, "--", value],
+      { timeout: 15_000 },
+    );
+    if (set.code !== 0) {
+      throw new AppError(
+        `could not stage prompt in WSL: ${(set.stderr || set.stdout).trim() || set.code}`,
+        500,
+        "prompt_stage_failed",
+      );
+    }
+    try {
+      const paste = await this.runWsl(
+        [this.config.tmuxBin, "paste-buffer", "-p", "-b", buffer, "-t", name],
+        { timeout: 15_000 },
+      );
+      if (paste.code !== 0) {
+        throw new AppError(
+          `could not paste prompt in WSL: ${(paste.stderr || paste.stdout).trim() || paste.code}`,
+          500,
+          "prompt_paste_failed",
+        );
+      }
+      const enter = await this.runWsl(
+        [this.config.tmuxBin, "send-keys", "-t", name, "Enter"],
+        { timeout: 15_000 },
+      );
+      if (enter.code !== 0) {
+        throw new AppError(
+          `could not submit prompt in WSL: ${(enter.stderr || enter.stdout).trim() || enter.code}`,
+          500,
+          "prompt_submit_failed",
+        );
+      }
+      return { sent: true };
+    } finally {
+      await this.runWsl([this.config.tmuxBin, "delete-buffer", "-b", buffer], { timeout: 10_000 });
+    }
   }
 
   spawnTerminal({ session, cwd, cols, rows }) {

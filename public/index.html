@@ -9,18 +9,22 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <link rel="stylesheet" href="/styles.css?v=0.1.18" />
+    <link rel="stylesheet" href="/styles.css?v=2.0.0.2" />
     <title>omp 会话</title>
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div class="identity">
-          <div class="eyebrow">主机</div>
-          <h1 id="host-name">连接中…</h1>
-          <div class="host-status">
-            <span id="connection-dot" class="dot" title="连接状态"></span>
-            <span id="host-sub">正在连接</span>
+        <div class="topbar-main">
+          <img class="brand-logo" src="/icons/omp.svg" alt="omp" />
+          <div class="identity">
+            <div class="eyebrow">主机</div>
+            <h1 id="host-name">连接中…</h1>
+            <div class="host-status">
+              <span id="connection-dot" class="dot" title="连接状态"></span>
+              <span id="host-sub">正在连接</span>
+              <span id="client-version-badge" class="client-version hidden"></span>
+            </div>
           </div>
         </div>
         <div class="topbar-actions">
@@ -32,15 +36,8 @@
       <main>
         <section id="boot-view" class="boot-overlay" aria-live="polite">
           <div class="boot-brand">
-            <img src="/icons/icon.svg" alt="" class="boot-logo" />
+            <img src="/icons/omp.svg" alt="" class="boot-logo" />
             <h1>omp mobile</h1>
-            <p>远程会话</p>
-          </div>
-          <div class="boot-status">
-            <span class="spinner" aria-hidden="true"></span>
-            <p>正在加载…</p>
-            <p class="hint">如果长时间停在这里，点下面的按钮重新加载。</p>
-            <a class="button-link" href="/?reload=1">重新加载</a>
           </div>
         </section>
 
@@ -67,7 +64,7 @@
           <section id="empty-state" class="empty-state hidden">
             <span class="spinner" aria-hidden="true"></span>
             <div>
-              <p id="empty-message">正在启动 omp…</p>
+              <p id="empty-message">暂无会话</p>
               <p id="empty-detail" class="empty-detail hidden"></p>
             </div>
             <button id="retry-button" class="secondary hidden" type="button">重试</button>
@@ -77,10 +74,22 @@
     </div>
 
     <div id="chat-overlay" class="overlay chat-overlay hidden" role="dialog" aria-modal="true" aria-label="omp 会话">
-      <iframe id="chat-frame" title="omp 会话" allow="clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe>
-      <div id="chat-loading" class="chat-loading"><span class="spinner"></span>正在连接…</div>
+      <div id="chat-live" class="chat-live">
+        <div id="chat-live-list" class="chat-live-list"></div>
+      </div>
+      <iframe id="chat-frame" title="omp 会话输入" allow="clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe>
+      <div id="chat-loading" class="chat-loading">
+        <span class="spinner"></span>
+        <span id="chat-loading-text">正在连接…</span>
+        <button id="chat-retry" class="chat-retry hidden" type="button">重新连接</button>
+      </div>
+      <form id="chat-composer" class="chat-composer hidden">
+        <textarea id="chat-input" rows="1" placeholder="输入提示词…" enterkeyhint="enter" spellcheck="false"></textarea>
+        <button id="chat-send" class="chat-send" type="submit" aria-label="发送" disabled>发送</button>
+      </form>
       <div class="chat-topbar">
         <button id="chat-back" class="chat-back" type="button" title="返回主页">‹ 返回</button>
+        <img class="chat-brand" src="/icons/omp.svg" alt="" />
         <div class="chat-current">
           <span id="chat-current-title" class="chat-current-title"></span>
           <span id="chat-current-meta" class="chat-current-meta"></span>
@@ -112,26 +121,12 @@
         </form>
         <button id="logout-button" type="button" class="danger">清除令牌</button>
         <p class="hint">令牌只保存在本机，不会发送到会话中继。</p>
+        <p id="client-version" class="hint hidden"></p>
       </section>
-    </div>
-
-    <div id="rename-overlay" class="modal hidden" role="dialog" aria-modal="true" aria-label="重命名会话">
-      <div class="modal-card panel">
-        <h3>重命名会话</h3>
-        <form id="rename-form">
-          <label for="rename-input">名称</label>
-          <input id="rename-input" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="给这个会话起个名字" />
-          <div class="modal-actions">
-            <button id="rename-cancel" type="button" class="secondary">取消</button>
-            <button type="submit" class="primary">保存</button>
-          </div>
-        </form>
-        <p class="hint">留空则恢复智能命名。</p>
-      </div>
     </div>
 
     <div id="toast" class="toast hidden" role="status"></div>
 
-    <script type="module" src="/app.js?v=0.1.18"></script>
+    <script type="module" src="/app.js?v=2.0.0.2"></script>
   </body>
 </html>
